@@ -34,15 +34,19 @@ FRECUENCIA_MUESTREO = CONFIG["fisica_rodamiento"]["frecuencia_muestreo"]
 PUNTOS_FFT = CONFIG["fisica_rodamiento"]["puntos_fft"]
 TOLERANCIA_ARMONICA = CONFIG["diagnostico"]["tolerancia_armonica_hz"]
 
-# --- Carga de datos ---
+# --- Carga de datos (Lazy Loading para robustez en CI/CD) ---
 TELEMETRIA_PATH = Path("datos/telemetria_optimizacion.csv")
 PARQUET_PATH = Path("datos/nasa_bearing_consolidado.parquet")
 
-if not TELEMETRIA_PATH.exists():
-    raise FileNotFoundError("Telemetría no encontrada. Ejecuta primero analisis.py")
+df_telemetria = None
+df_parquet = None
 
-df_telemetria = pl.read_csv(TELEMETRIA_PATH)
-df_parquet = pl.read_parquet(PARQUET_PATH) if PARQUET_PATH.exists() else None
+def inicializar_datos():
+    global df_telemetria, df_parquet
+    if df_telemetria is None and TELEMETRIA_PATH.exists():
+        df_telemetria = pl.read_csv(TELEMETRIA_PATH)
+    if df_parquet is None and PARQUET_PATH.exists():
+        df_parquet = pl.read_parquet(PARQUET_PATH)
 
 # Frecuencias teóricas
 FREQ_BPFO = 236.4
@@ -137,9 +141,10 @@ app = FastAPI(
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
+    inicializar_datos()
     return HealthResponse(
         status="ok",
-        telemetria_registros=df_telemetria.height
+        telemetria_registros=df_telemetria.height if df_telemetria is not None else 0
     )
 
 
@@ -147,6 +152,12 @@ async def health_check():
 async def predict(
     archivo_origen: str = Query(..., description="Nombre del archivo de origen (ej. 2004.02.18.20.42.39)")
 ):
+    inicializar_datos()
+    if df_telemetria is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Servicio no disponible: La base de datos de telemetría no ha sido cargada o el pipeline no se ha ejecutado."
+        )
     df_fila = df_telemetria.filter(pl.col("archivo_origen") == archivo_origen)
     if df_fila.is_empty():
         raise HTTPException(status_code=404, detail=f"Archivo {archivo_origen} no encontrado")

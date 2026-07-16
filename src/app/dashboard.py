@@ -15,7 +15,7 @@ from core.dsp import (
     calcular_rul_hibrido
 )
 
-st.set_page_config(page_title="Industrial AI - Visor de Datos", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Industrial AI - Visor & Simulador", page_icon="🏭", layout="wide")
 
 # ============================================================
 # FUNCIÓN DE FORMATO DE TIEMPO INTELIGENTE
@@ -62,7 +62,7 @@ def formato_tiempo_legible(horas: float) -> str:
 
 
 # ============================================================
-# CLASE PRINCIPAL DEL DASHBOARD
+# CLASE PRINCIPAL DEL DASHBOARD (VISOR & SIMULADOR)
 # ============================================================
 
 class DashboardPrognosisIndustrial:
@@ -130,7 +130,6 @@ class DashboardPrognosisIndustrial:
         )
 
         if pagina == "💬 Chat RAG":
-            # Importar y ejecutar la página de chat
             try:
                 from pages.chat import main as chat_main
                 chat_main()
@@ -139,9 +138,22 @@ class DashboardPrognosisIndustrial:
                 st.error("La página de chat no está disponible. Asegúrate de que existe src/app/pages/chat.py")
                 st.stop()
 
-        # Si no es Chat RAG, continuar con el Dashboard
-        st.title("📊 Visor de Datos de Pronóstico Industrial")
-        st.caption("Análisis objetivo de vibraciones - NASA IMS Dataset")
+        # Seleccionar Modo de Operación en el Sidebar
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🛠️ Modo de Operación")
+        modo_operacion = st.sidebar.radio(
+            "Selecciona el origen de los datos:",
+            ["📁 Datos Reales NASA IMS", "🎮 Simulador de Fallas Interactivo"]
+        )
+
+        if modo_operacion == "📁 Datos Reales NASA IMS":
+            self.renderizar_modo_nasa()
+        else:
+            self.renderizar_modo_simulador()
+
+    def renderizar_modo_nasa(self):
+        st.title("📊 Visor de Datos de Pronóstico Industrial (NASA IMS)")
+        st.caption("Análisis objetivo de vibraciones reales - NASA IMS Dataset")
         st.markdown("---")
 
         mtime = os.path.getmtime(self.archivo_telemetria) if self.archivo_telemetria.exists() else 0.0
@@ -175,7 +187,6 @@ class DashboardPrognosisIndustrial:
             if ciclos_rul >= 999:
                 horas_rul = None
 
-        # Mostrar RUL en formato legible
         rul_legible = formato_tiempo_legible(horas_rul) if horas_rul is not None else "Sin proyección"
 
         zona_falla = "Ninguna"
@@ -285,11 +296,251 @@ class DashboardPrognosisIndustrial:
 
         st.markdown("---")
 
-        # --- REPORTE ---
-        st.subheader("📋 Reporte Técnico")
+        # --- REPORTE TÉCNICO ---
+        self.mostrar_reporte_texto(seleccion, rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla, punto_micro)
+
+    def renderizar_modo_simulador(self):
+        st.title("🎮 Simulador de Fallas e Inyección de Defectos Físicos")
+        st.caption("Entorno de simulación matemática interactiva para validación de algoritmos de pronóstico y agente RAG")
+        st.info("💡 Este simulador genera ráfagas de vibración sintéticas en tiempo real aplicando las fórmulas de cinemática de rodamientos.")
+        st.markdown("---")
+
+        # Controles del Simulador en el Sidebar
+        st.sidebar.header("🎛️ Parámetros Físicos")
+        rpm = st.sidebar.slider("Velocidad de Rotación (RPM)", min_value=500.0, max_value=3000.0, value=2000.0, step=50.0)
+        ruido_base = st.sidebar.slider("Ruido Blanco de Fondo (g)", min_value=0.001, max_value=0.100, value=0.010, step=0.001, format="%.3f")
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🚨 Inyección de Defecto")
+        falla_inyectada = st.sidebar.selectbox(
+            "Seleccionar Defecto a Inyectar:",
+            ["Ninguna (Saludable)", "Pista Externa (BPFO)", "Pista Interna (BPFI)", "Elementos Rodantes (BSF)", "Jaula (FTF)"]
+        )
+        severidad_defecto = st.sidebar.slider("Severidad del Defecto (g)", min_value=0.01, max_value=0.40, value=0.15, step=0.01)
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📈 Configuración de Histórico")
+        cant_ciclos = st.sidebar.slider("Historial de Ciclos para RUL", min_value=15, max_value=150, value=60, step=5)
+        tipo_degradacion = st.sidebar.selectbox(
+            "Dinámica de Degradación Temporal:",
+            ["Exponencial", "Lineal"]
+        )
+
+        # 1. GENERACIÓN DE SEÑAL DE VIBRACIÓN SINTÉTICA (DSP)
+        Fs = self.frecuencia_muestreo
+        N = self.puntos_fft
+        t = np.arange(N) / Fs
+        fr = rpm / 60.0  # Frecuencia de rotación del eje (Hz)
+
+        # Calcular frecuencia base teórica del defecto
+        f_defecto_base = 0.0
+        codigo_falla = "Ninguna"
+        if falla_inyectada == "Pista Externa (BPFO)":
+            f_defecto_base = fr * (self.FREQ_BPFO / (2000.0 / 60.0))  # Escalar por RPM
+            codigo_falla = "Pista Externa (BPFO)"
+        elif falla_inyectada == "Pista Interna (BPFI)":
+            f_defecto_base = fr * (self.FREQ_BPFI / (2000.0 / 60.0))
+            codigo_falla = "Pista Interna (BPFI)"
+        elif falla_inyectada == "Elementos Rodantes (BSF)":
+            f_defecto_base = fr * (self.FREQ_BSF / (2000.0 / 60.0))
+            codigo_falla = "Elementos Rodantes (BSF)"
+        elif falla_inyectada == "Jaula (FTF)":
+            f_defecto_base = fr * (self.FREQ_FTF / (2000.0 / 60.0))
+            codigo_falla = "Jaula (FTF)"
+
+        # Generar señal
+        # Ruido de fondo blanco normal
+        senal_sintetica = ruido_base * np.random.normal(size=N)
+
+        # Agregar pico de defecto y harmónicos
+        if falla_inyectada != "Ninguna (Saludable)" and f_defecto_base > 0:
+            armonicos = [1.0, 0.6, 0.35, 0.15]
+            for orden, amp in enumerate(armonicos, 1):
+                senal_sintetica += severidad_defecto * amp * np.sin(2 * np.pi * (f_defecto_base * orden) * t)
+
+        # Calcular RMS del instante actual
+        rms_actual = calcular_rms(senal_sintetica)
+
+        # 2. GENERACIÓN DEL HISTÓRICO DE DEGRADACIÓN SINTÉTICO (Para el Modelo de RUL)
+        # Modelamos una curva que evoluciona desde un nivel saludable (~0.04g) hasta el valor RMS actual
+        x_ciclos = np.arange(1, cant_ciclos + 1)
+        y_rms_base = 0.045 + ruido_base
+
+        if falla_inyectada == "Ninguna (Saludable)":
+            # Estable con ruido
+            y_rms_hist = y_rms_base + np.random.normal(0, 0.002, len(x_ciclos))
+        else:
+            if tipo_degradacion == "Lineal":
+                # Incremento lineal
+                y_rms_hist = np.linspace(y_rms_base, rms_actual, len(x_ciclos)) + np.random.normal(0, 0.002, len(x_ciclos))
+            else:
+                # Incremento exponencial
+                y_rms_hist = y_rms_base * np.exp(np.log(rms_actual / y_rms_base) / (cant_ciclos - 1) * np.arange(cant_ciclos)) + np.random.normal(0, 0.002, len(x_ciclos))
+
+        # Asegurar que el último valor sea exactamente el RMS actual calculado
+        y_rms_hist[-1] = rms_actual
+        # Aplicar válvula de seguridad en el histórico simulado
+        y_rms_hist_acumulado = np.zeros_like(y_rms_hist)
+        max_val = 0.0
+        for i, val in enumerate(y_rms_hist):
+            if val > max_val:
+                max_val = val
+            y_rms_hist_acumulado[i] = max_val
+
+        # Crear DataFrame de telemetría histórica sintética
+        df_hist_simulado = pl.DataFrame({
+            "indice_secuencial": x_ciclos,
+            "vibracion_rms": y_rms_hist_acumulado
+        })
+
+        max_rms_historico = float(df_hist_simulado["vibracion_rms"].max())
+        motor_apagado = rms_actual <= self.UMBRAL_APAGADO
+
+        # 3. PREDICCIÓN DE RUL HÍBRIDO SIMULADO
+        ciclos_rul, x_fut, y_proy, modelo_sel = self.calcular_rul_pronostico(df_hist_simulado, max_rms_historico)
+
+        if max_rms_historico >= self.UMBRAL_CRITICO:
+            horas_rul = 0.0
+            ciclos_rul = 0.0
+        else:
+            horas_rul = (ciclos_rul * self.MINUTOS_POR_CICLO) / 60.0
+            if ciclos_rul >= 999:
+                horas_rul = None
+
+        rul_legible = formato_tiempo_legible(horas_rul) if horas_rul is not None else "Sin proyección"
+
+        # 4. CLASIFICACIÓN DE FALLA Y DETECCIÓN DE MICROFISURA
+        # FFT para obtener frecuencia dominante del simulador
+        freqs, amps = ejecutar_fft(senal_sintetica, Fs)
+        idx_max = np.argmax(amps) if len(amps) > 0 else 0
+        freq_dom = freqs[idx_max] if len(amps) > 0 else 0.0
+
+        zona_falla_sim = "Ninguna"
+        if not motor_apagado and max_rms_historico >= self.UMBRAL_ALERTA:
+            if falla_inyectada != "Ninguna (Saludable)":
+                zona_falla_sim = codigo_falla
+            else:
+                zona_falla_sim = "Ninguna (operación normal)"
+
+        punto_micro_sim = calcular_punto_inflexion_log(
+            x_ciclos,
+            y_rms_hist_acumulado
+        )
+
+        # --- MÉTRICAS SIMULADAS ---
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("RMS Actual (Simulado)", f"{rms_actual:.4f} g")
+        with col2:
+            st.metric("RMS Máximo Histórico (Simulado)", f"{max_rms_historico:.4f} g")
+        with col3:
+            st.metric("Frecuencia Dominante (Simulada)", f"{freq_dom:.1f} Hz")
+        with col4:
+            if motor_apagado:
+                rul_text = "Motor detenido"
+            elif horas_rul is None:
+                rul_text = "Sin proyección"
+            elif horas_rul == 0.0:
+                rul_text = "0.0 horas (Reemplazo)"
+            else:
+                rul_text = rul_legible
+            st.metric("RUL Estimado (Simulado)", rul_text)
+
+        st.markdown("---")
+
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.metric("Modelo de regresión", modelo_sel)
+        with col_info2:
+            st.metric("Zona de falla inyectada", zona_falla_sim)
+        with col_info3:
+            if punto_micro_sim is not None:
+                st.metric("Microfisura simulada (ciclo)", str(punto_micro_sim))
+            else:
+                st.metric("Microfisura simulada", "No detectada")
+
+        st.markdown("---")
+
+        # --- GRÁFICOS SIMULADOS ---
+        col_graf_izq, col_graf_der = st.columns(2)
+
+        with col_graf_izq:
+            st.subheader("📈 Curva de Degradación (Simulada)")
+            fig_rul_sim = go.Figure()
+            fig_rul_sim.add_trace(go.Scatter(
+                x=x_ciclos, y=y_rms_hist_acumulado,
+                mode='lines+markers', name='Historial de Degradación', line=dict(color='#00CC96', width=2.5)
+            ))
+            if not motor_apagado and len(x_fut) > 0 and ciclos_rul < 999:
+                fig_rul_sim.add_trace(go.Scatter(
+                    x=x_fut, y=y_proy,
+                    mode='lines', name=f'Proyección de Falla ({modelo_sel})', line=dict(color='#EF553B', dash='dash')
+                ))
+            fig_rul_sim.add_hline(y=self.UMBRAL_CRITICO, line_dash="dash", line_color="orange",
+                             annotation_text=f"Umbral Crítico ({self.UMBRAL_CRITICO:.2f} g)")
+
+            fig_rul_sim.update_layout(
+                template="plotly_dark", height=450,
+                xaxis_title="Ciclos Simulados", yaxis_title="RMS (g)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_rul_sim, use_container_width=True)
+
+        with col_graf_der:
+            st.subheader("🔬 Espectro de Frecuencia (Simulado)")
+            fig_fft_sim = go.Figure()
+            fig_fft_sim.add_trace(go.Scatter(
+                x=freqs, y=amps, mode='lines',
+                name='FFT Simulada', line=dict(color='#AB63FA')
+            ))
+            if f_defecto_base > 0:
+                fig_fft_sim.add_vline(x=f_defecto_base, line_dash="dash", line_color="red",
+                                      annotation_text=f"Base Falla: {f_defecto_base:.1f} Hz")
+                # Graficar líneas verticales para los armónicos teóricos
+                for h in range(2, 4):
+                    fig_fft_sim.add_vline(x=f_defecto_base * h, line_dash="dot", line_color="rgba(255,0,0,0.4)")
+
+            fig_fft_sim.update_layout(
+                template="plotly_dark", height=450,
+                xaxis_title="Frecuencia (Hz)", yaxis_title="Amplitud (g)",
+                xaxis=dict(range=[0, 3000])
+            )
+            st.plotly_chart(fig_fft_sim, use_container_width=True)
+
+        st.markdown("---")
+
+        # --- CONEXIÓN DE SIMULACIÓN CON AGENTE RAG ---
+        st.subheader("🧠 Agente RAG Predictivo (ChromaDB Vector Store)")
+        if st.checkbox("Ejecutar agente experto RAG sobre el estado simulado", value=True):
+            try:
+                from src.agent.rag_agent import RAGAgent
+                agent = RAGAgent()
+                status_sim = {
+                    "rms_actual": rms_actual,
+                    "rms_max": max_rms_historico,
+                    "frecuencia": freq_dom,
+                    "rul_hours": horas_rul if horas_rul is not None else 999.0,
+                    "zona_falla": zona_falla_sim
+                }
+
+                with st.spinner("Consultando base de conocimiento semántica..."):
+                    recomendacion_sim = agent.generar_recomendacion("Simulador_Rodamiento_Interactivo", status_sim)
+
+                st.markdown("### 🤖 Recomendación Generada por el Agente:")
+                st.info(recomendacion_sim)
+            except Exception as e:
+                st.error(f"Error consultando el agente RAG: {e}")
+
+        st.markdown("---")
+
+        # --- REPORTE TÉCNICO SIMULADO ---
+        self.mostrar_reporte_texto("Sintético_Simulado", rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla_sim, punto_micro_sim)
+
+    def mostrar_reporte_texto(self, seleccion, rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla, punto_micro):
+        st.subheader("📋 Reporte Técnico Estructurado")
 
         lineas = []
-        lineas.append(f"**Archivo analizado:** {seleccion}")
+        lineas.append(f"**Archivo / Instante analizado:** {seleccion}")
         lineas.append(f"**RMS actual:** {rms_actual:.4f} g")
         lineas.append(f"**RMS máximo histórico:** {max_rms_historico:.4f} g")
         lineas.append(f"**Frecuencia dominante:** {freq_dom:.1f} Hz")

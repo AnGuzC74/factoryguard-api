@@ -18,16 +18,21 @@ def print_header(title: str):
     print("=" * 60)
 
 
+import os
+
 def run_check(name: str, command: list) -> bool:
     """Ejecuta un comando y retorna True si fue exitoso."""
     print(f"▶ {name}...", end=" ", flush=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT)
     try:
         result = subprocess.run(
             command,
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
+            env=env
         )
         if result.returncode == 0:
             print("✅")
@@ -61,7 +66,7 @@ def main():
         "src/app/dashboard.py",
         "src/api/main.py",
         "src/monitor/monitor.py",
-        "tests/test_analytics.py",
+        "src/tests/test_analytics.py",
         "Dockerfile",
         "docker-compose.yml"
     ]
@@ -82,7 +87,7 @@ def main():
     print_header("2. Pruebas Unitarias (pytest)")
     results["unitarias"] = run_check(
         "Pruebas unitarias",
-        ["uv", "run", "pytest", "tests/", "-m", "not stress", "--tb=short"]
+        ["uv", "run", "pytest", "src/tests/", "-m", "not stress", "--tb=short"]
     )
 
     # 3. Verificar que la API puede importarse
