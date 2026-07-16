@@ -41,7 +41,7 @@ def calcular_punto_inflexion_log(x: np.ndarray, y_rms: np.ndarray, ventana: int 
     std_pend = np.std(pendientes)
     if std_pend < 1e-9:
         return None
-    puntos_criticos = np.where(pendientes > media_pend + 2 * std_pend)[0]
+    puntos_criticos = np.where(pendientes > media_pend + 1.5 * std_pend)[0]
     if len(puntos_criticos) > 0:
         return int(x[puntos_criticos[0] + 1])
     return None

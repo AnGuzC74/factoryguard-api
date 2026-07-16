@@ -1,7 +1,27 @@
-numpy==1.26.4
-polars==1.10.0
-scipy==1.14.0
-streamlit==1.37.0
-plotly==5.24.0
-rich==13.9.2
-pytest==8.3.2
+# --- Core numérico y de datos ---
+numpy>=1.24,<2
+polars>=1.10.0
+scipy>=1.13.0
+
+# --- API REST ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Dashboard e interfaz ---
+streamlit>=1.37.0
+plotly>=5.24.0
+matplotlib>=3.9.0
+rich>=13.9.0
+
+# --- Agente RAG ---
+chromadb>=0.5.0
+sentence-transformers>=2.2.0
+
+# --- Reportes ---
+reportlab>=4.2.0
+
+# --- Alertas / integraciones ---
+requests>=2.31.0
+
+# --- Testing ---
+pytest>=8.0.0
