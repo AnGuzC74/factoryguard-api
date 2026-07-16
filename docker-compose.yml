@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./datos:/app/datos
+      - ./cache_models:/root/.cache/huggingface
+    environment:
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface
+    command: uv run streamlit run src/app/dashboard.py --server.address=0.0.0.0 --server.port=8501
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./datos:/app/datos
+    environment:
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface
+    command: uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped

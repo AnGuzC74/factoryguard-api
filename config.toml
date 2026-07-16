@@ -1,0 +1,34 @@
+[infraestructura]
+archivo_parquet = "datos/nasa_bearing_consolidado.parquet"
+ruta_datos = "datos"
+database = "datos/industrial_ai.db"
+
+[fisica_rodamiento]
+frecuencia_muestreo = 20000
+puntos_fft = 16384
+umbral_estabilidad_rpm = 5.0
+
+[umbrales_severidad]
+critico_rms = 0.25
+alerta_rms = 0.12
+sano_rms = 0.0738
+motor_apagado_rms = 0.01
+
+[diagnostico]
+tolerancia_armonica_hz = 2.0
+ventana_persistencia_apagado = 5
+minutos_por_ciclo = 10.0
+
+[alertas]
+email_from = ""
+email_to = ""
+smtp_server = ""
+smtp_port = 587
+smtp_user = ""
+smtp_password = ""
+slack_webhook_url = ""
+
+[rag]
+chroma_db_path = "datos/chroma_db"
+collection_name = "manuales_mantenimiento"
+embeddings_model = "sentence-transformers/all-MiniLM-L6-v2"
