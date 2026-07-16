@@ -15,7 +15,7 @@
 
 ```mermaid
 flowchart TD
-    A[Usuario] --> B{Orquestador<br>(run.py)}
+    A[Usuario] --> B{Orquestador (run.py)} B -->
     B --> C[Pipeline de Ingesta<br>Multiprocesamiento]
     B --> D[Dashboard Streamlit<br>Sin semáforo]
     B --> E[API REST FastAPI]
