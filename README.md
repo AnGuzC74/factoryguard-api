@@ -15,22 +15,18 @@
 
 ```mermaid
 flowchart TD
-    A[Usuario] --> B{Orquestador (run.py)} B -->
-    B --> C[Pipeline de Ingesta<br>Multiprocesamiento]
-    B --> D[Dashboard Streamlit<br>Sin semáforo]
+    A[Usuario] --> B[Orquestador run.py]
+    B --> C[Pipeline de Ingesta]
+    B --> D[Dashboard Streamlit]
     B --> E[API REST FastAPI]
-    B --> F[Reportes PDF/Rich]
-
-    C --> G[Archivos .txt NASA]
+    B --> F[Reportes PDF]
+    C --> G[Archivos NASA]
     G --> H[Parquet + CSV]
     H --> I[SQLite Multi-Activo]
-
-    I --> J[Motor RUL Híbrido<br>Lineal/Exponencial]
-    I --> K[Alertas Email/Slack]
+    I --> J[Motor RUL Hibrido]
+    I --> K[Alertas]
     I --> L[Agente RAG ChromaDB]
-
-    L --> M[Manuales Técnicos]
+    L --> M[Manuales Tecnicos]
     M --> N[Recomendaciones Expertas]
-
     E --> I
     F --> I
