@@ -10,6 +10,11 @@ if root_dir not in sys.path:
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
+# Forzar la recarga del módulo en Streamlit Cloud para evitar que use la memoria caché vieja de sys.modules
+for key in list(sys.modules.keys()):
+    if "rag_agent" in key or "agent" in key:
+        sys.modules.pop(key, None)
+
 try:
     from src.agent.rag_agent import RAGAgent
 except ImportError:
