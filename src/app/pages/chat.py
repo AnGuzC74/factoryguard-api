@@ -43,15 +43,8 @@ def main():
         # Respuesta del agente
         with st.spinner("Consultando base de conocimiento..."):
             try:
-                status = {
-                    "rms_actual": 0.0,
-                    "rms_max": 0.0,
-                    "frecuencia": 0.0,
-                    "rul_hours": 999,
-                    "zona_falla": "No definida"
-                }
                 if st.session_state.rag_agent is not None:
-                    response = st.session_state.rag_agent.generar_recomendacion("Usuario", status)
+                    response = st.session_state.rag_agent.responder_conversacional(prompt)
                 else:
                     response = "Lo siento, el agente RAG no pudo inicializarse porque la base de datos ChromaDB no está lista."
             except Exception as e:
