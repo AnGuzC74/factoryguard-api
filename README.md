@@ -13,6 +13,33 @@ El sistema utiliza como núcleo analítico los históricos de vibraciones del pr
 
 ---
 
+## 🌐 Acceso a la Aplicación Web (Producción en Vivo)
+
+Para evaluadores, reclutadores o clientes que deseen interactuar directamente con la plataforma sin necesidad de configuración local, el sistema se encuentra completamente desplegado y operativo en:
+
+👉 **[FactoryGuard AI - Streamlit Web Application](https://factoryguard-api-wn3yhqy8mcpeu2jjfyp7uy.streamlit.app/)**
+
+### 🎮 Guía Rápida para la Interacción Web
+Una vez ingreses al enlace, puedes experimentar las dos modalidades principales de la plataforma:
+
+1. **Modo 1: Datos Reales de la NASA (IMS Bearing Dataset)**
+   * **Objetivo:** Analizar el ciclo de vida real de un rodamiento bajo carga constante hasta el fallo catastrófico.
+   * **Instrucciones:** Selecciona un rodamiento en la barra lateral (p. ej., *Rodamiento 1*), y ajusta el **Desplazamiento Temporal (Días de Operación)** usando el deslizador. Observa cómo la curva de tendencia RMS se actualiza en tiempo real, identificando automáticamente la transición microscópica de estado (Sano $\rightarrow$ Alerta Incipiente $\rightarrow$ Alerta Avanzada $\rightarrow$ Crítico) y proyectando los días de vida útil remanente (RUL) mediante regresión adaptativa.
+
+2. **Modo 2: Simulador Interactivo de Inyección de Fallas Físicas**
+   * **Objetivo:** Simular anomalías y evaluar instantáneamente la respuesta de los algoritmos DSP y de IA.
+   * **Instrucciones:**
+     * Activa el interruptor **"Habilitar Simulador de Inyección de Fallas"** en la barra lateral.
+     * Modifica parámetros operativos críticos como las **RPM del motor** y el **Ruido de Fondo (Acelerómetro)**.
+     * Selecciona e incrementa la **severidad del defecto** específico que deseas inyectar (pistas externa/interna `BPFO/BPFI`, giro de elemento rodante `BSF` o jaula `FTF`).
+     * Visualiza instantáneamente cómo reacciona el espectro FFT en el gráfico interactivo de Plotly, mostrando los picos de armónicos exactos calculados dinámicamente mediante las ecuaciones cinemáticas cinéticas.
+
+3. **Asistente Experto RAG (Chat Inteligente)**
+   * **Objetivo:** Consultar manuales y directrices de mantenimiento predictivo con IA.
+   * **Instrucciones:** Dirígete a la pestaña de **Chat Experto RAG** en el menú de navegación de la barra lateral. Realiza consultas técnicas conversacionales libres (p. ej., *"¿Qué es el indicador RMS?"*, *"¿Cuáles son las ecuaciones de BPFO y BPFI?"* o *"¿Qué acciones de mantenimiento preventivo debo tomar si se activa una alerta crítica?"*). El chatbot te responderá en tiempo real utilizando la base de conocimiento cargada en ChromaDB, con soporte de fórmulas en LaTeX y planes de acción profesionales.
+
+---
+
 ## 📈 Impacto de Negocio & ROI (Perspectiva Ejecutiva)
 
 En la industria pesada y de manufactura avanzada, la falla no planificada de un único rodamiento en un motor crítico puede detener líneas de producción enteras, generando costos directos de inactividad que superan los **$20,000 USD por hora**, además de daños secundarios a otros activos y riesgos de seguridad para los operarios.
