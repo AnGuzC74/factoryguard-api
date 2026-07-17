@@ -131,11 +131,23 @@ class DashboardPrognosisIndustrial:
 
         if pagina == "💬 Chat RAG":
             try:
-                from pages.chat import main as chat_main
+                # Agregar las posibles rutas de búsqueda para la página de chat
+                app_dir = str(Path(__file__).parent)
+                if app_dir not in sys.path:
+                    sys.path.append(app_dir)
+                
+                try:
+                    from pages.chat import main as chat_main
+                except ImportError:
+                    try:
+                        from app.pages.chat import main as chat_main
+                    except ImportError:
+                        from src.app.pages.chat import main as chat_main
+                
                 chat_main()
                 st.stop()
-            except ImportError:
-                st.error("La página de chat no está disponible. Asegúrate de que existe src/app/pages/chat.py")
+            except Exception as e:
+                st.error(f"La página de chat no está disponible o falló al cargar: {e}. Asegúrate de que existe src/app/pages/chat.py")
                 st.stop()
 
         # Seleccionar Modo de Operación en el Sidebar
@@ -513,7 +525,19 @@ class DashboardPrognosisIndustrial:
         st.subheader("🧠 Agente RAG Predictivo (ChromaDB Vector Store)")
         if st.checkbox("Ejecutar agente experto RAG sobre el estado simulado", value=True):
             try:
-                from src.agent.rag_agent import RAGAgent
+                # Añadir tanto el directorio raíz como 'src' al path de python para compatibilidad total con Streamlit Cloud
+                root_dir = str(Path(__file__).parent.parent.parent)
+                src_dir = str(Path(__file__).parent.parent)
+                if root_dir not in sys.path:
+                    sys.path.append(root_dir)
+                if src_dir not in sys.path:
+                    sys.path.append(src_dir)
+
+                try:
+                    from src.agent.rag_agent import RAGAgent
+                except ImportError:
+                    from agent.rag_agent import RAGAgent
+
                 agent = RAGAgent()
                 status_sim = {
                     "rms_actual": rms_actual,
