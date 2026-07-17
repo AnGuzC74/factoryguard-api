@@ -42,7 +42,7 @@ Una vez ingreses al enlace, puedes experimentar las dos modalidades principales 
 
 ## 📈 Impacto de Negocio & ROI (Perspectiva Ejecutiva)
 
-En la industria pesada y de manufactura avanzada, la falla no planificada de un único rodamiento en un motor crítico puede detener líneas de producción enteras, generando costos directos de inactividad que superan los **$20,000 USD por hora**, además de daños secundarios a otros activos y riesgos de seguridad para los operarios.
+En la industria pesada y de manufactura avanzada, la falla no planificada de un único rodamiento en un motor crítico puede detener líneas de producción enteras, generando costos directos de inactividad que, según estimaciones consolidadas de la industria, pueden superar las decenas de miles de dólares por hora dependiendo del sector y la criticidad del activo, además de daños secundarios a otros activos y riesgos de seguridad para los operarios.
 
 **FactoryGuard AI** transforma el mantenimiento de un paradigma reactivo o preventivo estándar a un enfoque **predictivo optimizado por datos**:
 * **Reducción de Paradas No Planificadas:** Permite programar el reemplazo del componente dañado de manera oportuna con días u horas de antelación, sincronizándolo con ventanas estándar de producción.
@@ -112,7 +112,7 @@ El proyecto destaca por un riguroso desarrollo de software científico estructur
 * **Detección Automática de Microcrack:** Algoritmo optimizado mediante la evaluación dinámica del gradiente del logaritmo del RMS sobre ventanas móviles para identificar el momento preciso de la transición microscópica (inflexión) a la Fase II de degradación.
 
 ### 2. Motor de RUL Híbrido
-* Se adapta dinámicamente al estado de salud de la maquinaria. Realiza un ajuste de curvas simultáneo mediante **Regresión Lineal Múltiple** y **Regresión Log-Exponencial** con origen desplazado dinámicamente. El sistema selecciona en tiempo real el modelo de menor error cuadrático medio (RMSE) para proyectar cuándo el rodamiento cruzará el umbral crítico de falla irreversible ($0.25\text{ g}$).
+* Se adapta dinámicamente al estado de salud de la maquinaria. Realiza un ajuste de curvas simultáneo mediante **Regresión Lineal Simple** y **Regresión Log-Exponencial** con origen desplazado dinámicamente. El sistema selecciona en tiempo real el modelo de menor error cuadrático medio (RMSE) para proyectar cuándo el rodamiento cruzará el umbral crítico de falla irreversible ($0.25\text{ g}$).
 
 ### 3. Válvula de Seguridad de Irreversibilidad Física
 * El daño mecánico es acumulativo y físicamente no puede autorepararse. El sistema incluye una lógica estricta que almacena e incrementa la variable `max_rms_historico`, evitando caídas momentáneas en los reportes de severidad del rodamiento por factores transitorios como la disipación térmica o reasentamientos de lubricación.
@@ -198,10 +198,10 @@ PYTHONPATH=. pytest src/tests
 
 * **Lenguaje:** Python 3.12 / 3.13
 * **Procesamiento de Señal (DSP):** NumPy, SciPy (Transformada de Hilbert y FFT)
-* **Ingeniería de Características y Datos Columnares:** Polars, PyArrow
+* **Ingeniería de Características y Datos Columnares:** Polars
 * **Base de Datos:** SQLite3, ChromaDB (Vector Store)
 * **Modelado Predictivo (Prognosis):** Regresiones adaptativas robustas polinomiales y exponenciales (mínimos cuadrados)
 * **Visualización Interactiva:** Streamlit, Plotly
 * **Framework de API:** FastAPI, Uvicorn
 * **Generación de Reportes corporativos:** ReportLab PDF, Rich (Terminal CLI)
-* **Garantía de Calidad (QA):** Pytest (100% de cobertura en tests analíticos físicos)
+* **Garantía de Calidad (QA):** Pytest (77% de cobertura en el núcleo físico/DSP `src/core/dsp.py` y 17% de cobertura global verificada mediante `pytest-cov`)

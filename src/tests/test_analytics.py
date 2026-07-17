@@ -12,9 +12,38 @@ from src.core.dsp import (
     calcular_rms,
     ejecutar_fft,
     calcular_rul_hibrido,
-    calcular_punto_inflexion_log
+    calcular_punto_inflexion_log,
+    demodular_envolvente
 )
 from src.app.dashboard import DashboardPrognosisIndustrial
+
+
+def test_demodulacion_envolvente():
+    """
+    Valida la demodulación por envolvente usando la Transformada de Hilbert.
+    Se inyecta una señal portadora de 3000 Hz modulada en amplitud por una baja frecuencia (envolvente) de 50 Hz.
+    El demodulador debe aislar y encontrar la frecuencia de modulación de 50 Hz como pico dominante.
+    """
+    fs = 20000
+    n = 16384
+    t = np.arange(n) / fs
+    
+    # Moduladora (envolvente) de 50 Hz y Portadora de 3000 Hz
+    f_mod = 50.0
+    f_car = 3000.0
+    
+    amplitud_mod = 1.0 + 0.5 * np.sin(2 * np.pi * f_mod * t)
+    senal = amplitud_mod * np.sin(2 * np.pi * f_car * t)
+    
+    # Demodular envolvente en la banda [2000, 4000] Hz
+    freqs, amps = demodular_envolvente(senal, fs, f_low=2000.0, f_high=4000.0)
+    
+    # El pico dominante en el espectro de la envolvente debe ser f_mod (50 Hz)
+    idx_max = np.argmax(amps)
+    frec_max = freqs[idx_max]
+    
+    # La resolución espectral es fs / n ≈ 1.22 Hz. Verificamos tolerancia de 2 Hz.
+    assert np.abs(frec_max - f_mod) <= 2.0
 
 
 def test_remocion_dc_offset():

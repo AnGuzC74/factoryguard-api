@@ -1,6 +1,60 @@
 import numpy as np
 from scipy.fft import fft, fftfreq
+from scipy.signal import hilbert, butter, filtfilt
 from typing import Tuple, Union
+
+
+def demodular_envolvente(
+    senal: np.ndarray, 
+    frecuencia_muestreo: int, 
+    f_low: float = 2000.0, 
+    f_high: float = 8000.0
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Realiza la demodulación de envolvente (Envelope Demodulation) mediante la Transformada de Hilbert.
+    
+    1. Aplica un filtro paso-banda Butterworth a la señal cruda para aislar la banda de resonancia.
+    2. Calcula la señal analítica usando la Transformada de Hilbert.
+    3. Obtiene la magnitud de la señal analítica (la envolvente).
+    4. Remueve el DC offset de la envolvente.
+    5. Ejecuta la FFT sobre la envolvente centrada para obtener el espectro de la envolvente.
+    
+    Retorna:
+        frecuencias_envolvente: np.ndarray
+        amplitudes_envolvente: np.ndarray
+    """
+    n = len(senal)
+    if n == 0:
+        return np.array([]), np.array([])
+    
+    # 1. Filtro paso-banda Butterworth
+    nyq = 0.5 * frecuencia_muestreo
+    low = f_low / nyq
+    high = f_high / nyq
+    
+    low = np.clip(low, 0.001, 0.99)
+    high = np.clip(high, 0.002, 0.999)
+    if low >= high:
+        low, high = 0.1, 0.9
+        
+    b, a = butter(4, [low, high], btype='band')
+    senal_filtrada = filtfilt(b, a, senal)
+    
+    # 2. Señal analítica y Envolvente (magnitud de la señal analítica)
+    senal_analitica = hilbert(senal_filtrada)
+    envolvente = np.abs(senal_analitica)
+    
+    # 3. Remover DC offset de la envolvente
+    envolvente_centrada = remover_dc_offset(envolvente)
+    
+    # 4. FFT de la envolvente
+    componentes = fft(envolvente_centrada)
+    frecuencias_totales = fftfreq(n, 1 / frecuencia_muestreo)
+    mitad = n // 2
+    frecuencias_envolvente = frecuencias_totales[:mitad]
+    amplitudes_envolvente = (2.0 / n) * np.abs(componentes[:mitad])
+    
+    return frecuencias_envolvente, amplitudes_envolvente
 
 
 def remover_dc_offset(senal: np.ndarray) -> np.ndarray:

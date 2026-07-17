@@ -18,7 +18,7 @@ import uvicorn
 
 # Añadir path para importar el core
 sys.path.append(str(Path(__file__).parent.parent))
-from core.dsp import calcular_rul_hibrido, ejecutar_fft, calcular_rms
+from core.dsp import calcular_rul_hibrido, ejecutar_fft, calcular_rms, demodular_envolvente
 from database.db_manager import DatabaseManager
 
 # --- Configuración ---
@@ -66,6 +66,8 @@ class PredictResponse(BaseModel):
     modelo_usado: str
     zona_falla: str
     estado: str
+    espectro_envolvente_frecuencias: Optional[list[float]] = None
+    espectro_envolvente_amplitudes: Optional[list[float]] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -186,6 +188,19 @@ async def predict(
     zona = determinar_zona_falla(freq_dom, max_rms_historico)
     estado = calcular_estado(max_rms_historico, ciclos_rul)
 
+    # 1. Demodular envolvente si df_parquet y la columna están disponibles
+    frecuencias_env_list = []
+    amplitudes_env_list = []
+    if df_parquet is not None and "rodamiento_1" in df_parquet.columns:
+        df_bloque = df_parquet.filter(pl.col("archivo_origen") == archivo_origen)
+        if not df_bloque.is_empty():
+            senal_cruda = df_bloque["rodamiento_1"].head(PUNTOS_FFT).to_numpy()
+            f_env, a_env = demodular_envolvente(senal_cruda, FRECUENCIA_MUESTREO)
+            # Para no sobrecargar con miles de elementos, podemos limitar o mandar el espectro completo.
+            # Mandamos el espectro completo convertido a floats redondeados
+            frecuencias_env_list = f_env.tolist()
+            amplitudes_env_list = a_env.tolist()
+
     return PredictResponse(
         archivo_origen=archivo_origen,
         rms_actual=round(rms_actual, 4),
@@ -196,7 +211,9 @@ async def predict(
         frecuencia_dominante=round(freq_dom, 1),
         modelo_usado=modelo,
         zona_falla=zona,
-        estado=estado
+        estado=estado,
+        espectro_envolvente_frecuencias=[round(f, 2) for f in frecuencias_env_list] if frecuencias_env_list else None,
+        espectro_envolvente_amplitudes=[round(a, 6) for a in amplitudes_env_list] if amplitudes_env_list else None
     )
 
 
