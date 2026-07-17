@@ -121,6 +121,27 @@ class DashboardPrognosisIndustrial:
                 return True
         return False
 
+    def mostrar_guia_usuario(self, es_simulador=False):
+        with st.expander("📖 Guía de Usuario & Instrucciones de la Versión Web", expanded=False):
+            st.markdown("""
+            ### 🚀 Guía de Inicio Rápido - FactoryGuard AI
+            Esta interfaz web ha sido diseñada como un entorno de demostración interactiva de grado industrial para la evaluación de fallas mecánicas en tiempo real.
+            
+            #### 1️⃣ Modos de Operación (Panel Lateral Izquierdo)
+            * **📁 Datos Reales NASA IMS**: Explora la degradación real acelerada de un rodamiento bajo esfuerzo constante hasta su fallo total.
+              - **Cómo usar**: Utiliza el deslizador temporal en la barra lateral para avanzar ciclo por ciclo y ver la evolución en las curvas y gráficos.
+            * **🎮 Simulador de Fallas Interactivo**: Un entorno de simulación física avanzada.
+              - **Cómo usar**: Selecciona qué tipo de defecto inyectar (BPFO, BPFI, BSF, FTF) y ajusta la severidad de la perturbación.
+            
+            #### 2️⃣ Ajustes de Variables Físicas (Sólo en el Simulador)
+            * **RPM (Velocidad de rotación del eje)**: Desliza para cambiar las revoluciones. Verás cómo los picos característicos en el **Espectro de Frecuencia** se reajustan dinámicamente según la cinemática de la máquina.
+            * **Ruido Blanco de Fondo (g)**: Representa el nivel de interferencia electromagnética o ruido de fondo del sensor acelerómetro.
+            
+            #### 3️⃣ Inteligencia Artificial Agentiva (RAG)
+            * Al activar la opción **"Ejecutar agente experto RAG..."** en el simulador o al ir a la sección **"💬 Chat RAG"** en la navegación lateral, puedes consultar de forma interactiva y conversacional a nuestra IA.
+            * La IA consultará una base de datos vectorial de alto rendimiento (**ChromaDB**) que contiene manuales técnicos de fabricantes como SKF o FAG para proveerte procedimientos detallados de montaje, desmontaje y mantenimiento predictivo en tiempo real.
+            """)
+
     def renderizar_interfaz(self):
         # --- NAVEGACIÓN EN EL SIDEBAR ---
         st.sidebar.title("🧭 Navegación")
@@ -166,6 +187,8 @@ class DashboardPrognosisIndustrial:
     def renderizar_modo_nasa(self):
         st.title("📊 Visor de Datos de Pronóstico Industrial (NASA IMS)")
         st.caption("Análisis objetivo de vibraciones reales - NASA IMS Dataset")
+        
+        self.mostrar_guia_usuario(es_simulador=False)
         st.markdown("---")
 
         mtime = os.path.getmtime(self.archivo_telemetria) if self.archivo_telemetria.exists() else 0.0
@@ -314,6 +337,8 @@ class DashboardPrognosisIndustrial:
     def renderizar_modo_simulador(self):
         st.title("🎮 Simulador de Fallas e Inyección de Defectos Físicos")
         st.caption("Entorno de simulación matemática interactiva para validación de algoritmos de pronóstico y agente RAG")
+        
+        self.mostrar_guia_usuario(es_simulador=True)
         st.info("💡 Este simulador genera ráfagas de vibración sintéticas en tiempo real aplicando las fórmulas de cinemática de rodamientos.")
         st.markdown("---")
 
