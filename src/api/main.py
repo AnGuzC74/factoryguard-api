@@ -4,14 +4,19 @@ Endpoints:
 - GET /health: health check
 - POST /predict: predicción de RUL y diagnóstico
 - GET /report/{archivo_origen}: genera un reporte PDF
+- POST /predict/classify: clasifica fallas según características operativas
+- POST /agent/trigger: dispara el agente prescriptivo
+- GET /agent/status/{agent_run_id}: estado de la sesión del agente
+- POST /agent/approve/{agent_run_id}: aprueba o rechaza la orden
+- POST /agent/ask/{agent_run_id}: pregunta en lenguaje natural sobre la sesión
 """
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import numpy as np
 import polars as pl
 import tomllib
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
@@ -20,6 +25,9 @@ import uvicorn
 sys.path.append(str(Path(__file__).parent.parent))
 from core.dsp import calcular_rul_hibrido, ejecutar_fft, calcular_rms, demodular_envolvente
 from database.db_manager import DatabaseManager
+from services.fault_classifier import ClasificadorFalla
+from agent_orchestrator.graph import OrquestadorAgentePrescriptivo
+from agent.rag_agent import RAGAgent
 
 # --- Configuración ---
 CONFIG_PATH = Path("config.toml")
@@ -33,6 +41,34 @@ MINUTOS_POR_CICLO = CONFIG["diagnostico"]["minutos_por_ciclo"]
 FRECUENCIA_MUESTREO = CONFIG["fisica_rodamiento"]["frecuencia_muestreo"]
 PUNTOS_FFT = CONFIG["fisica_rodamiento"]["puntos_fft"]
 TOLERANCIA_ARMONICA = CONFIG["diagnostico"]["tolerancia_armonica_hz"]
+
+AGENT_CONFIG = CONFIG.get("agent", {})
+FEATURE_FLAG_ENABLED = AGENT_CONFIG.get("feature_flag_enabled", False)
+
+# --- Base de Datos ---
+DB_PATH = CONFIG["infraestructura"].get("database", "datos/industrial_ai.db")
+db_manager = DatabaseManager(DB_PATH)
+
+# --- Inicializar Clasificador ---
+classifier = ClasificadorFalla()
+classifier_loaded = False
+
+def cargar_clasificador():
+    global classifier, classifier_loaded
+    if not classifier_loaded:
+        model_path = Path("datos/fault_classifier.pkl")
+        if model_path.exists():
+            classifier.cargar_modelo(str(model_path))
+            classifier_loaded = True
+            print("[API] Clasificador de fallas cargado correctamente.")
+        else:
+            print("[API] Advertencia: No se encontró el clasificador de fallas entrenado en datos/fault_classifier.pkl")
+
+# --- Inicializar Orquestador ---
+orquestador = OrquestadorAgentePrescriptivo(db_manager)
+
+# --- Inicializar RAGAgent ---
+rag_agent = RAGAgent(CONFIG_PATH)
 
 # --- Carga de datos (Lazy Loading para robustez en CI/CD) ---
 TELEMETRIA_PATH = Path("datos/telemetria_optimizacion.csv")
@@ -68,11 +104,37 @@ class PredictResponse(BaseModel):
     estado: str
     espectro_envolvente_frecuencias: Optional[list[float]] = None
     espectro_envolvente_amplitudes: Optional[list[float]] = None
+    tipo_falla_predicho: Optional[str] = None
+    confianza: Optional[float] = None
 
 class HealthResponse(BaseModel):
     status: str
     version: str = "2.0.1"
     telemetria_registros: int
+
+class ClassifyRequest(BaseModel):
+    type_product: str  # "L", "M", "H"
+    air_temperature_k: float
+    process_temperature_k: float
+    rotational_speed_rpm: float
+    torque_nm: float
+    tool_wear_min: float
+
+class ClassifyResponse(BaseModel):
+    tipo_falla_predicho: str
+    confianza: float
+
+class AgentTriggerRequest(BaseModel):
+    asset_id: int
+    rul_hours: float
+    tipo_falla: str
+    severidad: str
+
+class AgentApproveRequest(BaseModel):
+    aprobado: bool
+
+class AgentAskRequest(BaseModel):
+    pregunta: str
 
 
 # --- Helpers ---
@@ -133,10 +195,18 @@ def calcular_estado(max_rms: float, ciclos_rul: float) -> str:
         return "SALUDABLE"
 
 
+def verificar_feature_flag():
+    if not FEATURE_FLAG_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Servicio no disponible: El agente prescriptivo está desactivado en la configuración."
+        )
+
+
 # --- FastAPI App ---
 app = FastAPI(
     title="Industrial AI Prognostics API",
-    description="API para pronóstico de RUL y diagnóstico de rodamientos",
+    description="API para pronóstico de RUL, diagnóstico y orquestación prescriptiva",
     version="2.0.1"
 )
 
@@ -196,8 +266,6 @@ async def predict(
         if not df_bloque.is_empty():
             senal_cruda = df_bloque["rodamiento_1"].head(PUNTOS_FFT).to_numpy()
             f_env, a_env = demodular_envolvente(senal_cruda, FRECUENCIA_MUESTREO)
-            # Para no sobrecargar con miles de elementos, podemos limitar o mandar el espectro completo.
-            # Mandamos el espectro completo convertido a floats redondeados
             frecuencias_env_list = f_env.tolist()
             amplitudes_env_list = a_env.tolist()
 
@@ -213,7 +281,9 @@ async def predict(
         zona_falla=zona,
         estado=estado,
         espectro_envolvente_frecuencias=[round(f, 2) for f in frecuencias_env_list] if frecuencias_env_list else None,
-        espectro_envolvente_amplitudes=[round(a, 6) for a in amplitudes_env_list] if amplitudes_env_list else None
+        espectro_envolvente_amplitudes=[round(a, 6) for a in amplitudes_env_list] if amplitudes_env_list else None,
+        tipo_falla_predicho=None,
+        confianza=None
     )
 
 
@@ -225,6 +295,133 @@ async def generate_report(archivo_origen: str):
         return {"message": "Reporte generado", "path": str(pdf_path)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Nuevos Endpoints (Clasificación de fallas y Agente Prescriptivo) ---
+
+@app.post("/predict/classify", response_model=ClassifyResponse)
+async def predict_classify(request: ClassifyRequest):
+    cargar_clasificador()
+    if not classifier.is_trained:
+        raise HTTPException(
+            status_code=503,
+            detail="Servicio no disponible: El modelo de clasificación no ha sido entrenado."
+        )
+
+    features_dict = {
+        "Type": request.type_product,
+        "Air temperature [K]": request.air_temperature_k,
+        "Process temperature [K]": request.process_temperature_k,
+        "Rotational speed [rpm]": request.rotational_speed_rpm,
+        "Torque [Nm]": request.torque_nm,
+        "Tool wear [min]": request.tool_wear_min
+    }
+
+    try:
+        tipo_falla, confianza = classifier.predecir(features_dict)
+        return ClassifyResponse(
+            tipo_falla_predicho=tipo_falla,
+            confianza=confianza
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en la predicción: {str(e)}")
+
+
+@app.post("/agent/trigger")
+async def agent_trigger(request: AgentTriggerRequest):
+    verificar_feature_flag()
+    try:
+        session_id = orquestador.disparar_grafo(
+            asset_id=request.asset_id,
+            rul_hours=request.rul_hours,
+            tipo_falla=request.tipo_falla,
+            severidad=request.severidad
+        )
+        return {
+            "agent_run_id": session_id,
+            "status": "Pausado (Esperando Aprobación)"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error iniciando el agente: {str(e)}")
+
+
+@app.get("/agent/status/{agent_run_id}")
+async def agent_status(agent_run_id: str):
+    verificar_feature_flag()
+    session = db_manager.get_agent_session(agent_run_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Sesión del agente {agent_run_id} no encontrada.")
+    return {
+        "agent_run_id": session["session_id"],
+        "status": session["status"],
+        "state_name": session["state_name"],
+        "state_data": session["state_data"]
+    }
+
+
+@app.post("/agent/approve/{agent_run_id}")
+async def agent_approve(agent_run_id: str, request: AgentApproveRequest):
+    verificar_feature_flag()
+    session = db_manager.get_agent_session(agent_run_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Sesión {agent_run_id} no encontrada.")
+
+    try:
+        final_state = orquestador.procesar_aprobacion(agent_run_id, request.aprobado)
+        if not final_state:
+            raise HTTPException(status_code=500, detail="Error procesando la aprobación del agente.")
+        return {
+            "status": "Aprobado" if request.aprobado else "Rechazado",
+            "mensaje_final": final_state["mensaje_final"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando la aprobación: {str(e)}")
+
+
+@app.post("/agent/ask/{agent_run_id}")
+async def agent_ask(agent_run_id: str, request: AgentAskRequest):
+    verificar_feature_flag()
+    session = db_manager.get_agent_session(agent_run_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Sesión del agente {agent_run_id} no encontrada.")
+
+    state_data = session["state_data"]
+
+    # Enriquecer el prompt con la información del estado actual de la sesión
+    orden = state_data.get("orden_prescriptiva") or {}
+    recomendacion = state_data.get("recomendacion") or {}
+    best_balance = recomendacion.get("mejor_balance") or {}
+
+    contexto = (
+        f"Contexto del diagnóstico actual:\n"
+        f"- ID de Activo: {state_data.get('asset_id')}\n"
+        f"- Tipo de Falla: {state_data.get('tipo_falla')}\n"
+        f"- Severidad: {state_data.get('severidad')}\n"
+        f"- Vida Útil Restante (RUL): {state_data.get('rul_hours')} horas\n"
+        f"- Urgencia: {orden.get('urgencia', 'BAJA')}\n"
+        f"- Acción Sugerida: {orden.get('accion_sugerida')}\n"
+        f"- Requiere Reemplazo: {'Sí' if orden.get('requiere_reemplazo') else 'No'}\n"
+    )
+    if best_balance:
+        contexto += (
+            f"- Proveedor Recomendado: {best_balance.get('proveedor')}\n"
+            f"- Precio: {best_balance.get('precio')} EUR\n"
+            f"- Tiempo de arribo: {best_balance.get('tiempo_arribo_dias')} días\n"
+        )
+    contexto += f"- Decisión de Operador: {state_data.get('aprobado')}\n"
+    contexto += f"- Mensaje de Cierre: {state_data.get('mensaje_final')}\n"
+
+    full_query = (
+        f"Usa la siguiente información del estado del agente para responder la pregunta del usuario:\n"
+        f"=== ESTADO ===\n{contexto}\n=============\n"
+        f"Pregunta del usuario: {request.pregunta}"
+    )
+
+    try:
+        respuesta = rag_agent.responder_conversacional(full_query)
+        return {"respuesta": respuesta}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error consultando al RAGAgent: {str(e)}")
 
 
 if __name__ == "__main__":

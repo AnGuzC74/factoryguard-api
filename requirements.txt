@@ -16,6 +16,7 @@ rich>=13.9.0
 # --- Agente RAG ---
 chromadb>=0.5.0
 sentence-transformers>=2.2.0
+langgraph>=0.2.0
 
 # --- Reportes ---
 reportlab>=4.2.0
