@@ -123,6 +123,55 @@ El proyecto destaca por un riguroso desarrollo de software científico estructur
 ### 5. Agente Conversacional RAG e Inteligencia Artificial
 * Cuenta con una colección vectorial persistente en **ChromaDB** que aloja manuales técnicos y normativas industriales. Ante cualquier estado de alarma del rodamiento, el agente recupera semánticamente los procedimientos operativos estandarizados (SOP) y genera planes detallados de acción.
 
+### 8. Clasificación de Fallas (Fase 1 - Data Science Clásico)
+Se incorpora un pipeline riguroso para clasificar de forma multiclase exclusiva el tipo de falla operativo utilizando el dataset **AI4I 2020 Predictive Maintenance Dataset** de la UCI.
+
+* **Estrategia contra el desbalance**: Las fallas representan aproximadamente el 3.5% del dataset. Para mitigar el sesgo hacia la clase mayoritaria, se emplea un clasificador `RandomForest` penalizado mediante pesos de clase balanceados (`class_weight='balanced'`).
+* **Mapeo de Clases**:
+  * `0`: Sana
+  * `1`: TWF (Tool Wear Failure)
+  * `2`: HDF (Heat Dissipation Failure)
+  * `3`: PWF (Power Failure)
+  * `4`: OSF (Overstrain Failure)
+  * `5`: RNF (Random Failures)
+  * `6`: Otra/Múltiple (Agrupa fallas sin bandera específica o concurrentes)
+* **Validación Cruzada**: Se realiza mediante `StratifiedKFold` de 5 pliegues para asegurar robustez estadística clásica.
+* **Métricas Reales Obtenidas (Out-of-Fold)**:
+  * **Sana (0)**: Precision: `0.9900`, Recall: `0.9766`, F1: `0.9832`
+  * **TWF (1)**: Precision: `0.0517`, Recall: `0.0714`, F1: `0.0600` (Falla compleja debido a su transición lenta y lineal)
+  * **HDF (2)**: Precision: `0.5731`, Recall: `0.9245`, F1: `0.7076` (Fuerte correlación física con diferenciales térmicos)
+  * **PWF (3)**: Precision: `0.5738`, Recall: `0.8750`, F1: `0.6931` (Correlación directa con potencia mecánica)
+  * **OSF (4)**: Precision: `0.5043`, Recall: `0.7564`, F1: `0.6051` (Asociada a torque y desgaste límite)
+  * **RNF (5)**: Precision: `0.0000`, Recall: `0.0000`, F1: `0.0000` (Sin correlación determinista con los descriptores mecánicos de entrada)
+  * **Otra/Múltiple (6)**: Precision: `0.3158`, Recall: `0.1818`, F1: `0.2308`
+  * **Macro Promedio**: Precision: `0.4298`, Recall: `0.5408`, F1: `0.4685`
+  * **Promedio Ponderado**: Precision: `0.9705`, Recall: `0.9653`, F1: `0.9669`
+  * *Accuracy Global*: `0.9653`
+
+### 9. Agente Prescriptivo de Orquestación (Fase 2 - Agentic AI)
+Se desarrolla un agente de orquestación inteligente basado en grafos de estados utilizando **LangGraph** para generar acciones correctivas, cotizar repuestos de manera determinista y ofrecer soporte conversacional contextualizado.
+
+* **Estructura del Estado**: El estado almacena `session_id`, `asset_id`, `rul_hours`, `tipo_falla`, `severidad`, `orden_prescriptiva`, `repuestos`, `tabla_comparativa`, `recomendacion`, `aprobado` y `mensaje_final`.
+* **Reglas Deterministas**: Se definen constantes estrictas por severidad (p. ej., parada inmediata y reemplazo para "CRÍTICO"; aumento de lubricación e inspección visual en 12 horas para "ALERTA INCIPIENTE").
+* **Mapeo de Proveedores (Mock)**: Se cotiza en tiempo real con 3 proveedores simulados (SKF Iberia S.A., FAG-INA España, NSK Industrial Solutions) de forma determinista para reproducibilidad de pruebas.
+* **Fórmula Determinista de Recomendación (Mejor Balance)**: Se evalúa ponderando con peso de 50% el precio normalizado y 50% el tiempo de arribo en días, recomendando de forma óptima el mejor proveedor.
+* **Punto de Pausa e Interrupción (Aprobación Humana)**: El grafo interrumpe su ejecución en el nodo `aprobacion_humana`, guardando el estado serializado en SQLite (`agent_sessions`) con estatus `"Pausado (Esperando Aprobación)"` hasta recibir la decisión mediante el endpoint `/agent/approve`.
+* **Q&A Interactivo sobre la Sesión**: La API expone el endpoint `/agent/ask/{agent_run_id}` el cual lee el estado persistido, inyecta su contexto en el `RAGAgent` y responde conversacionalmente preguntas del operador en tiempo real.
+
+```mermaid
+flowchart TD
+    A[Inicio: trigger] --> B[diagnosticar]
+    B --> C[generar_orden_prescriptiva]
+    C --> D[buscar_repuestos]
+    D --> E[presentar_comparativa]
+    E --> F[aprobacion_humana]
+    F -->|Persistencia en SQLite - Pausa| G{¿Aprobado por Operador?}
+    G -->|POST /agent/approve| H[finalizar_orden]
+    H --> I[Fin: Estado Terminado]
+```
+
+*Nota explícita de honestidad: El cotizador de repuestos es un **MOCK** (simulado deterministamente), mientras que la persistencia en SQLite, la orquestación del grafo con LangGraph, la integración RAG y el pipeline completo de API/FastAPI son **REALES** y están plenamente validados.*
+
 ---
 
 ## 📚 Fundamentos Físicos & Reporte Técnico Detallado

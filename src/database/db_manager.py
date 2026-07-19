@@ -60,6 +60,16 @@ class DatabaseManager:
                     FOREIGN KEY (asset_id) REFERENCES assets(id)
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS agent_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    state_name TEXT NOT NULL,
+                    state_data TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
 
     # --- Operaciones con Activos ---
@@ -215,6 +225,43 @@ class DatabaseManager:
             ''', (asset_id, tipo, f'-{horas} hours'))
             count = cursor.fetchone()[0]
             return count > 0
+
+    # --- Operaciones con Agente Prescriptivo ---
+
+    def save_agent_session(self, session_id: str, state_name: str, state_data: Dict[str, Any], status: str) -> None:
+        import json
+        state_data_str = json.dumps(state_data)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO agent_sessions (session_id, state_name, state_data, status)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    state_name=excluded.state_name,
+                    state_data=excluded.state_data,
+                    status=excluded.status,
+                    updated_at=CURRENT_TIMESTAMP
+            ''', (session_id, state_name, state_data_str, status))
+            conn.commit()
+
+    def get_agent_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        import json
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT session_id, state_name, state_data, status, created_at, updated_at
+                FROM agent_sessions WHERE session_id = ?
+            ''', (session_id,))
+            row = cursor.fetchone()
+            if row:
+                d = dict(row)
+                try:
+                    d["state_data"] = json.loads(d["state_data"])
+                except Exception:
+                    d["state_data"] = {}
+                return d
+            return None
 
     # --- Eliminación ---
 

@@ -32,3 +32,6 @@ slack_webhook_url = ""
 chroma_db_path = "datos/chroma_db"
 collection_name = "manuales_mantenimiento"
 embeddings_model = "sentence-transformers/all-MiniLM-L6-v2"
+
+[agent]
+feature_flag_enabled = true
