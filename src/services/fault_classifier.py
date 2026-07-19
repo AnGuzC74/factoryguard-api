@@ -80,10 +80,10 @@ class ClasificadorFalla:
 
         # Codificación ordinal de 'Type'
         if "Type" in df_clean.columns:
-            # Si ya es numérico, lo dejamos, sino mapeamos L->0, M->1, H->2
-            if df_clean["Type"].dtype == object:
+            # Si ya es numérico, lo dejamos, sino mapeamos L->0, M->1, H->2 de forma robusta
+            if not pd.api.types.is_numeric_dtype(df_clean["Type"]):
                 type_mapping = {"L": 0, "M": 1, "H": 2}
-                df_clean["Type"] = df_clean["Type"].map(type_mapping).fillna(0)
+                df_clean["Type"] = df_clean["Type"].astype(str).str.upper().map(type_mapping).fillna(0).astype(int)
 
         # Generación del target robusto y mapeo determinista
         target = []
