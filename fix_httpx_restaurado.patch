@@ -1,0 +1,39 @@
+From 39e5ce02a146417d7d2db11a39cebdd9370ffe52 Mon Sep 17 00:00:00 2001
+From: "Claude (asistente)" <assistant@anthropic.com>
+Date: Thu, 23 Jul 2026 23:14:48 +0000
+Subject: [PATCH] fix: restaura httpx explicito (se habia perdido en un commit
+ posterior de cloud_mode)
+
+---
+ pyproject.toml   | 3 ++-
+ requirements.txt | 3 +++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/pyproject.toml b/pyproject.toml
+index d08296d..d135091 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -23,7 +23,8 @@ dependencies = [
+     "chromadb>=0.5.0",
+     "sentence-transformers>=2.2.0",
+     "requests>=2.31.0",
+-    "langgraph>=0.2.0"
++    "langgraph>=0.2.0",
++    "httpx>=0.25.0"
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/requirements.txt b/requirements.txt
+index 51a4950..a7474ae 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -27,3 +27,6 @@ requests>=2.31.0
+ # --- Testing ---
+ pytest>=8.0.0
+ pytest-cov>=5.0.0
++
++# --- Cliente HTTP (usado por negotiation.py para llamadas a OpenAI) ---
++httpx>=0.25.0
+-- 
+2.43.0
+
