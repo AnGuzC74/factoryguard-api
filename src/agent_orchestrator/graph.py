@@ -10,8 +10,12 @@ import uuid
 import json
 from langgraph.graph import StateGraph, END
 
-from src.adapters.mock_parts_supplier import MockPartsSupplier
-from src.database.db_manager import DatabaseManager
+try:
+    from src.adapters.mock_parts_supplier import MockPartsSupplier
+    from src.database.db_manager import DatabaseManager
+except ImportError:
+    from adapters.mock_parts_supplier import MockPartsSupplier
+    from database.db_manager import DatabaseManager
 
 
 # Constantes Nombradas - Reglas deterministas para generar la orden prescriptiva
@@ -134,7 +138,10 @@ def negociacion_multiagente(state: AgentState) -> Dict[str, Any]:
     Nodo de debate multi-agente donde Operaciones, Logística y Finanzas discuten
     el plan propuesto y el Juez emite una evaluación determinista.
     """
-    from src.agent_orchestrator.negotiation import ejecutar_debate_y_evaluacion
+    try:
+        from src.agent_orchestrator.negotiation import ejecutar_debate_y_evaluacion
+    except ImportError:
+        from agent_orchestrator.negotiation import ejecutar_debate_y_evaluacion
     db = DatabaseManager()
 
     # Obtener criticidad del activo de la base de datos

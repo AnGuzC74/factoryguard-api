@@ -8,15 +8,33 @@ import polars as pl
 import streamlit as st
 import plotly.graph_objects as go
 
-sys.path.append(str(Path(__file__).parent.parent))
-from core.dsp import (
-    ejecutar_fft,
-    calcular_rms,
-    calcular_punto_inflexion_log,
-    calcular_rul_hibrido
-)
-from database.db_manager import DatabaseManager
-from agent_orchestrator.graph import OrquestadorAgentePrescriptivo
+app_dir = Path(__file__).parent
+project_root = app_dir.parent.parent
+src_dir = app_dir.parent
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+try:
+    from src.core.dsp import (
+        ejecutar_fft,
+        calcular_rms,
+        calcular_punto_inflexion_log,
+        calcular_rul_hibrido
+    )
+    from src.database.db_manager import DatabaseManager
+    from src.agent_orchestrator.graph import OrquestadorAgentePrescriptivo
+except ImportError:
+    from core.dsp import (
+        ejecutar_fft,
+        calcular_rms,
+        calcular_punto_inflexion_log,
+        calcular_rul_hibrido
+    )
+    from database.db_manager import DatabaseManager
+    from agent_orchestrator.graph import OrquestadorAgentePrescriptivo
 
 st.set_page_config(page_title="Industrial AI - Visor & Simulador", page_icon="🏭", layout="wide")
 
