@@ -58,7 +58,20 @@ def cargar_config_negociacion(config_path: Path = Path("config.toml")) -> Dict[s
 
 # --- Cliente OpenAI / Fallback Helper ---
 
+def _is_cloud_mode() -> bool:
+    try:
+        import streamlit as st
+        if st.secrets and "cloud_mode" in st.secrets:
+            return bool(st.secrets["cloud_mode"])
+    except Exception:
+        pass
+    config_neg = cargar_config_negociacion()
+    return bool(config_neg.get("cloud_mode", False))
+
 def llamar_llm_openai(prompt: str, system_prompt: str) -> Optional[str]:
+    # El modo nube debe operar siempre con el generador de plantillas expertas (evitar costos de API)
+    if _is_cloud_mode():
+        return None
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None

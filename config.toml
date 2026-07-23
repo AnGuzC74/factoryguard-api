@@ -37,6 +37,9 @@ embeddings_model = "sentence-transformers/all-MiniLM-L6-v2"
 feature_flag_enabled = true
 
 [agent_negotiation]
+# Indica si la aplicación se ejecuta en modo nube optimizado (ahorro de RAM en ChromaDB/Embeddings)
+cloud_mode = false
+
 # Margen de seguridad requerido para asegurar que el repuesto llegue antes de que falle el activo (en días)
 margen_seguridad_dias = 2.0
 

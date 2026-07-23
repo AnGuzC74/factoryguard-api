@@ -213,6 +213,25 @@ class DashboardPrognosisIndustrial:
         st.markdown("---")
         st.subheader("🤖 Orquestación Prescriptiva Multi-Agente (Negociación & Juez)")
 
+        # Detectar de forma segura si estamos en modo nube optimizado
+        is_cloud = False
+        try:
+            if st.secrets and "cloud_mode" in st.secrets:
+                is_cloud = bool(st.secrets["cloud_mode"])
+        except Exception:
+            pass
+        if not is_cloud:
+            is_cloud = bool(self.config.get("agent_negotiation", {}).get("cloud_mode", False))
+
+        if is_cloud:
+            st.info(
+                "☁️ **Modo Cloud Optimizado Activo**: Esta versión de demostración pública en la nube "
+                "está optimizada para un consumo ultraligero de recursos. Para experimentar el sistema a su máxima "
+                "escala técnica ('con todos los hierros') incluyendo base vectorial ChromaDB y embeddings locales "
+                "sin limitaciones, ejecute la aplicación de forma local de escritorio. Las justificaciones del "
+                "debate en esta demo pública se generan mediante plantillas expertas preestablecidas."
+            )
+
         # 1. Asegurar que exista un activo registrado en la base de datos para este asset_id
         asset = self.db.get_asset_by_id(asset_id)
         if not asset:

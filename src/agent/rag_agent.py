@@ -1,19 +1,12 @@
 """
 Agente de IA con RAG (Retrieval-Augmented Generation) para el sistema industrial.
-Utiliza ChromaDB para búsqueda semántica de manuales y genera recomendaciones
-basadas en reglas expertas (sin LLM para evitar dependencias externas).
+Utiliza ChromaDB para búsqueda semántica de manuales en modo local, y realiza un
+bypass perezoso en modo nube (Cloud Mode) para evitar devorar recursos de memoria.
 """
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import tomllib
 import sys
-
-try:
-    import chromadb
-    from chromadb.utils import embedding_functions
-    RAG_AVAILABLE = True
-except ImportError:
-    RAG_AVAILABLE = False
 
 
 class RAGAgent:
@@ -29,14 +22,49 @@ class RAGAgent:
         self.umbral_critico = self.config["umbrales_severidad"]["critico_rms"]
         self.umbral_alerta = self.config["umbrales_severidad"]["alerta_rms"]
 
+        # Base de conocimientos estática para seeding y búsqueda por keywords en la nube
+        self.documentos = [
+            "Procedimiento de reemplazo de rodamiento con falla en Pista Externa (BPFO). Para cambiar un rodamiento con daños en la pista externa (BPFO), detenga el motor por completo, aplique LOTO (Bloqueo y Etiquetado), use un extractor mecánico o hidráulico de garras para retirar el rodamiento viejo, limpie la zona del eje con solvente dieléctrico, caliente el rodamiento nuevo por inducción a 110°C y móntelo en caliente aplicando presión únicamente en el anillo que tiene el ajuste. (Fuente: Manual SKF de Montaje - Sección 4.2)",
+            "Inspección y monitoreo de rodamiento con desgaste en Pista Interna (BPFI). Las fallas en la pista interna (BPFI) generan impactos periódicos de alta energía. Se recomienda programar un análisis de ultrasonido acústico de alta frecuencia y aumentar provisionalmente la lubricación con grasa para altas temperaturas para amortiguar el impacto metálico hasta que se pueda programar la parada técnica. (Fuente: Procedimiento de Mantenimiento Preventivo Alfonzo Rivas - Sección 3.1)",
+            "Procedimiento de reemplazo de rodamiento con falla en Elementos Rodantes (BSF). El daño en las bolas o elementos rodantes (BSF) provoca inestabilidad rotacional severa. Retire la tapa del soporte del rodamiento, verifique si hay picaduras o decoloración azulada por sobrecalentamiento en los rodillos y reemplace la unidad completa de inmediato si se detecta pérdida de lubricación crítica. (Fuente: Manual de Ingeniería FAG - Sección 6.8)",
+            "Mantenimiento preventivo estándar para rodamientos y alineación de ejes. Un rodamiento saludable requiere una alineación láser de acoplamientos con tolerancia menor a 0.05 mm y una lubricación balanceada. Registre periódicamente las lecturas térmicas para correlacionar con los valores RMS de vibración. (Fuente: Guía Práctica de Confiabilidad Industrial - Sección 1.1)",
+            "Procedimiento para fallas de jaula (FTF) e inestabilidad de la jaula. La falla de jaula (FTF) es una de las más peligrosas ya que puede causar la rotura instantánea y el bloqueo del eje. Ante alarmas en la frecuencia FTF, programe un paro técnico de emergencia de inmediato. (Fuente: Manual de Seguridad Operativa - Sección 2.4)"
+        ]
+        self.metadatas = [
+            {"fuente": "Manual de Montaje SKF", "seccion": "Sección 4.2", "tema": "BPFO"},
+            {"fuente": "Manual Alfonzo Rivas", "seccion": "Sección 3.1", "tema": "BPFI"},
+            {"fuente": "Manual de Ingeniería FAG", "seccion": "Sección 6.8", "tema": "BSF"},
+            {"fuente": "Guía de Confiabilidad", "seccion": "Sección 1.1", "tema": "Sano"},
+            {"fuente": "Manual de Seguridad Operativa", "seccion": "Sección 2.4", "tema": "FTF"}
+        ]
+
         self.client = None
         self.collection = None
         self._initialize_chroma()
 
-    def _initialize_chroma(self) -> None:
-        if not RAG_AVAILABLE:
-            return
+    def _is_cloud_mode(self) -> bool:
+        """
+        Determina de forma segura si el sistema está ejecutándose en Cloud Mode (ahorro de RAM).
+        Busca primero en st.secrets de Streamlit, luego cae de vuelta al config.toml local.
+        """
         try:
+            import streamlit as st
+            if st.secrets and "cloud_mode" in st.secrets:
+                return bool(st.secrets["cloud_mode"])
+        except Exception:
+            pass
+        return bool(self.config.get("agent_negotiation", {}).get("cloud_mode", False))
+
+    def _initialize_chroma(self) -> None:
+        if self._is_cloud_mode():
+            print("[RAG] Modo nube optimizado (cloud_mode=True). Bypasseando instanciación de ChromaDB y Embeddings.")
+            return
+
+        try:
+            # Los imports de chromadb y sentence-transformers son CONDICIONALES / PEREZOSOS
+            import chromadb
+            from chromadb.utils import embedding_functions
+
             self.client = chromadb.PersistentClient(path=self.chroma_path)
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
@@ -49,24 +77,10 @@ class RAGAgent:
             # Autoseeding si la colección está vacía para soportar despliegues instantáneos en la nube
             if self.collection.count() == 0:
                 print("[RAG] Sembrando base de datos vectorial con manuales técnicos...")
-                documentos = [
-                    "Procedimiento de reemplazo de rodamiento con falla en Pista Externa (BPFO). Para cambiar un rodamiento con daños en la pista externa (BPFO), detenga el motor por completo, aplique LOTO (Bloqueo y Etiquetado), use un extractor mecánico o hidráulico de garras para retirar el rodamiento viejo, limpie la zona del eje con solvente dieléctrico, caliente el rodamiento nuevo por inducción a 110°C y móntelo en caliente aplicando presión únicamente en el anillo que tiene el ajuste. (Fuente: Manual SKF de Montaje - Sección 4.2)",
-                    "Inspección y monitoreo de rodamiento con desgaste en Pista Interna (BPFI). Las fallas en la pista interna (BPFI) generan impactos periódicos de alta energía. Se recomienda programar un análisis de ultrasonido acústico de alta frecuencia y aumentar provisionalmente la lubricación con grasa para altas temperaturas para amortiguar el impacto metálico hasta que se pueda programar la parada técnica. (Fuente: Procedimiento de Mantenimiento Preventivo Alfonzo Rivas - Sección 3.1)",
-                    "Procedimiento de reemplazo de rodamiento con falla en Elementos Rodantes (BSF). El daño en las bolas o elementos rodantes (BSF) provoca inestabilidad rotacional severa. Retire la tapa del soporte del rodamiento, verifique si hay picaduras o decoloración azulada por sobrecalentamiento en los rodillos y reemplace la unidad completa de inmediato si se detecta pérdida de lubricación crítica. (Fuente: Manual de Ingeniería FAG - Sección 6.8)",
-                    "Mantenimiento preventivo estándar para rodamientos y alineación de ejes. Un rodamiento saludable requiere una alineación láser de acoplamientos con tolerancia menor a 0.05 mm y una lubricación balanceada. Registre periódicamente las lecturas térmicas para correlacionar con los valores RMS de vibración. (Fuente: Guía Práctica de Confiabilidad Industrial - Sección 1.1)",
-                    "Procedimiento para fallas de jaula (FTF) e inestabilidad de la jaula. La falla de jaula (FTF) es una de las más peligrosas ya que puede causar la rotura instantánea y el bloqueo del eje. Ante alarmas en la frecuencia FTF, programe un paro técnico de emergencia de inmediato. (Fuente: Manual de Seguridad Operativa - Sección 2.4)"
-                ]
-                metadatas = [
-                    {"fuente": "Manual de Montaje SKF", "seccion": "Sección 4.2", "tema": "BPFO"},
-                    {"fuente": "Manual Alfonzo Rivas", "seccion": "Sección 3.1", "tema": "BPFI"},
-                    {"fuente": "Manual de Ingeniería FAG", "seccion": "Sección 6.8", "tema": "BSF"},
-                    {"fuente": "Guía de Confiabilidad", "seccion": "Sección 1.1", "tema": "Sano"},
-                    {"fuente": "Manual de Seguridad Operativa", "seccion": "Sección 2.4", "tema": "FTF"}
-                ]
-                ids = [f"doc_manual_{i}" for i in range(len(documentos))]
+                ids = [f"doc_manual_{i}" for i in range(len(self.documentos))]
                 self.collection.add(
-                    documents=documentos,
-                    metadatas=metadatas,
+                    documents=self.documentos,
+                    metadatas=self.metadatas,
                     ids=ids
                 )
                 print(f"[RAG] Sembrado completado con éxito. {self.collection.count()} documentos cargados.")
@@ -75,9 +89,35 @@ class RAGAgent:
             self.client = None
             self.collection = None
 
+    def _query_fallback(self, query_text: str, n_results: int = 2) -> List[Dict[str, Any]]:
+        """
+        Fallback ultraligero basado en coincidencia de palabras clave (keyword matching) para el modo nube.
+        Evita instanciar modelos masivos en memoria pero provee respuestas coherentes.
+        """
+        q_words = set(query_text.lower().replace("?", "").replace("¿", "").split())
+        scored_docs = []
+        for i, doc in enumerate(self.documentos):
+            doc_words = set(doc.lower().split())
+            score = len(q_words.intersection(doc_words))
+            scored_docs.append((score, i))
+
+        # Ordenar de mayor a menor coincidencia
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+
+        results = []
+        for score, idx in scored_docs[:n_results]:
+            results.append({
+                "content": self.documentos[idx],
+                "metadata": self.metadatas[idx],
+                "distance": 0.0
+            })
+        return results
+
     def query(self, query_text: str, n_results: int = 3) -> List[Dict[str, Any]]:
-        if not self.collection:
-            return []
+        # Si estamos en modo nube o no se instanció ChromaDB, usar fallback ligero
+        if self._is_cloud_mode() or not self.collection:
+            return self._query_fallback(query_text, n_results=n_results)
+
         try:
             results = self.collection.query(
                 query_texts=[query_text],
@@ -93,8 +133,8 @@ class RAGAgent:
                     })
             return docs
         except Exception as e:
-            print(f"[RAG] Error en consulta: {e}")
-            return []
+            print(f"[RAG] Error en consulta ChromaDB: {e}")
+            return self._query_fallback(query_text, n_results=n_results)
 
     def generar_recomendacion(self, asset_name: str, status: Dict) -> str:
         zona = status.get('zona_falla', '')
@@ -111,8 +151,11 @@ class RAGAgent:
 
         recomendacion = self._generar_recomendacion_base(status)
 
-        if docs and RAG_AVAILABLE:
-            recomendacion += "\n\n📚 **Información de referencia técnica:**"
+        # Verificar disponibilidad para renderizar
+        is_rag_active = not self._is_cloud_mode()
+
+        recomendacion += f"\n\n📚 **Información de referencia técnica ({'Buscador Cloud Optimizado' if not is_rag_active else 'ChromaDB Vector Store'}):**"
+        if docs:
             for i, doc in enumerate(docs, 1):
                 content = doc['content'][:250] + "..." if len(doc['content']) > 250 else doc['content']
                 recomendacion += f"\n\n{i}. {content}"
@@ -166,7 +209,7 @@ El rodamiento se encuentra dentro de los parámetros operativos.
     def responder_conversacional(self, query_text: str) -> str:
         """
         Genera una respuesta conversacional y experta orientada a un chatbot
-        combinando heurísticas de lenguaje, definiciones físicas y consultas RAG en ChromaDB.
+        combinando heurísticas de lenguaje, definiciones físicas y consultas RAG.
         """
         # 1. Normalizar query
         q = query_text.lower().strip()
@@ -230,10 +273,11 @@ Puedo ayudarte a resolver dudas sobre:
 - **Válvula de Seguridad**: El sistema cuenta con lógica de irreversibilidad para evitar que fluctuaciones transitorias del RMS falseen un incremento ficticio del RUL.
 - **Filtro de Apagado**: Si la máquina se detiene, el cálculo de RUL se suspende automáticamente para no distorsionar el historial analítico predictivo."""
 
-        # 4. Búsqueda semántica usando ChromaDB para otras consultas técnicas
+        # 4. Búsqueda semántica
         docs = self.query(query_text, n_results=2)
-        if docs and RAG_AVAILABLE:
-            respuesta = f"🔍 **Análisis Técnico de Referencia (Base de Conocimiento RAG)**:\n\nBasándome en los manuales de ingeniería y guías de mantenimiento de FactoryGuard AI, he encontrado la siguiente información de alta relevancia para tu consulta:\n"
+        if docs:
+            is_cloud = self._is_cloud_mode()
+            respuesta = f"🔍 **Análisis Técnico de Referencia ({'Buscador Cloud Optimizado' if is_cloud else 'Base de Conocimiento RAG'}):**\n\nBasándome en los manuales de ingeniería y guías de mantenimiento de FactoryGuard AI, he encontrado la siguiente información de alta relevancia para tu consulta:\n"
             for i, doc in enumerate(docs, 1):
                 content = doc['content']
                 fuente = doc['metadata'].get('fuente', 'Manual Técnico')
