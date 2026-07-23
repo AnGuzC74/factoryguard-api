@@ -148,15 +148,20 @@ Se incorpora un pipeline riguroso para clasificar de forma multiclase exclusiva 
   * **Promedio Ponderado**: Precision: `0.9705`, Recall: `0.9653`, F1: `0.9669`
   * *Accuracy Global*: `0.9653`
 
-### 9. Agente Prescriptivo de Orquestación (Fase 2 - Agentic AI)
-Se desarrolla un agente de orquestación inteligente basado en grafos de estados utilizando **LangGraph** para generar acciones correctivas, cotizar repuestos de manera determinista y ofrecer soporte conversacional contextualizado.
+### 9. Sistema Multi-Agente de Negociación Prescriptiva y Juez Evaluador (Fase 2 - Agentic AI)
+Se evoluciona el orquestador prescriptivo a un sistema multi-agente autónomo con debate colaborativo y evaluación continua (LLM-as-a-Judge) implementado en **LangGraph**. Ante condiciones de degradación, tres agentes debaten y un Juez determinista audita la viabilidad técnica y financiera del plan de acción.
 
-* **Estructura del Estado**: El estado almacena `session_id`, `asset_id`, `rul_hours`, `tipo_falla`, `severidad`, `orden_prescriptiva`, `repuestos`, `tabla_comparativa`, `recomendacion`, `aprobado` y `mensaje_final`.
-* **Reglas Deterministas**: Se definen constantes estrictas por severidad (p. ej., parada inmediata y reemplazo para "CRÍTICO"; aumento de lubricación e inspección visual en 12 horas para "ALERTA INCIPIENTE").
-* **Mapeo de Proveedores (Mock)**: Se cotiza en tiempo real con 3 proveedores simulados (SKF Iberia S.A., FAG-INA España, NSK Industrial Solutions) de forma determinista para reproducibilidad de pruebas.
-* **Fórmula Determinista de Recomendación (Mejor Balance)**: Se evalúa ponderando con peso de 50% el precio normalizado y 50% el tiempo de arribo en días, recomendando de forma óptima el mejor proveedor.
-* **Punto de Pausa e Interrupción (Aprobación Humana)**: El grafo interrumpe su ejecución en el nodo `aprobacion_humana`, guardando el estado serializado en SQLite (`agent_sessions`) con estatus `"Pausado (Esperando Aprobación)"` hasta recibir la decisión mediante el endpoint `/agent/approve`.
-* **Q&A Interactivo sobre la Sesión**: La API expone el endpoint `/agent/ask/{agent_run_id}` el cual lee el estado persistido, inyecta su contexto en el `RAGAgent` y responde conversacionalmente preguntas del operador en tiempo real.
+* **Estructura del Estado**: El estado del grafo almacena `session_id`, `asset_id`, `rul_hours`, `tipo_falla`, `severidad`, `orden_prescriptiva`, `repuestos`, `tabla_comparativa`, `recomendacion`, `aprobado`, `mensaje_final`, `reporte_juez` y `debate`.
+* **Agentes Especializados**:
+  * **Operaciones**: Prioriza la continuidad operativa, el cumplimiento del margen de seguridad del activo y mitiga paradas no planificadas.
+  * **Logística**: Administra el stock y ofrece opciones de envío **Estándar** vs. **Exprés** (arribo acelerado con sobrecoste) para los proveedores de repuestos (SKF, FAG, NSK).
+  * **Finanzas**: Minimiza el Costo Total Integrado (CTC) y audita que el sobrecoste logístico exprés sea financieramente justificable frente al coste potencial de la inactividad.
+* **Juez Evaluador Determinista (LLM-as-a-Judge)**: Evalúa de forma 100% determinista reglas matemáticas rigurosas (arribo del repuesto dentro del margen de seguridad técnica y consistencia de costos de parada contra sobrecostes exprés) para emitir la aprobación/rechazo global. Utiliza el modelo de lenguaje (OpenAI GPT-4o-mini con temperatura `0.0` si se proporciona la API Key) exclusivamente para redactar el dictamen y la justificación final.
+* **Patrón de Fallback Robusto (Offline-Friendly)**: Si no se configura `OPENAI_API_KEY`, el orquestador realiza un fallback automático y transparente a generadores basados en plantillas expertas ricas, garantizando el paso de los tests unitarios y la estabilidad en CI/CD sin llamadas de red.
+* **Interrupción y Control Humano**: Si el Juez aprueba o rechaza, la sesión pasa al nodo de pausa `aprobacion_humana` con estatus `"Pausado (Esperando Aprobación)"` o `"Pausado (Rechazado por Juez)"`, respectivamente. El operador humano visualiza el debate completo, el desglose de costes y el reporte detallado del Juez en el dashboard antes de confirmar o cancelar definitivamente el mantenimiento.
+
+Para más detalles sobre las ecuaciones matemáticas y de control financiero implementadas en el Juez:
+👉 **[Reporte Técnico: Ecuaciones Físico-Económicas del Sistema Multi-Agente de Negociación](docs/multiagent_negotiation.md)**
 
 ```mermaid
 flowchart TD
@@ -164,13 +169,16 @@ flowchart TD
     B --> C[generar_orden_prescriptiva]
     C --> D[buscar_repuestos]
     D --> E[presentar_comparativa]
-    E --> F[aprobacion_humana]
-    F -->|Persistencia en SQLite - Pausa| G{¿Aprobado por Operador?}
-    G -->|POST /agent/approve| H[finalizar_orden]
-    H --> I[Fin: Estado Terminado]
+    E --> F[negociacion_multiagente: Debate + Juez]
+    F --> G[aprobacion_humana: Pausa SQLite]
+    G -->|Control Operador| H{¿Decisión Humana?}
+    H -->|Aprobado / Rechazado| I[finalizar_orden]
+    I --> J[Fin: Estado Terminado]
 ```
 
-*Nota explícita de honestidad: El cotizador de repuestos es un **MOCK** (simulado deterministamente), mientras que la persistencia en SQLite, la orquestación del grafo con LangGraph, la integración RAG y el pipeline completo de API/FastAPI son **REALES** y están plenamente validados.*
+*Nota explícita de honestidad:*
+* **MOCK**: El generador de ofertas de repuestos (proveedores, precios y Lead Times de envío Estándar vs. Exprés) y el debate entre los agentes de Operaciones, Logística y Finanzas bajo el fallback de red son **MOCK** (simulados deterministamente de forma realista).
+* **REAL**: La persistencia del estado en SQLite, el orquestador de grafos basado en LangGraph, la lógica de decisión matemática y de costes del Juez Evaluador, los endpoints FastAPI (`/agent/*`), el motor híbrido de RUL adaptativo, la suite de pruebas automatizadas y la renderización visual completa con control interactivo en el dashboard de Streamlit son **100% REALES** y están plenamente validados.
 
 ---
 

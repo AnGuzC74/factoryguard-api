@@ -63,17 +63,33 @@ class MockPartsSupplier:
         for i, proveedor in enumerate(self.PROVEEDORES):
             # Añadir variación de precio determinista (-15% a +15%)
             variacion = rng.uniform(-0.15, 0.15)
-            precio = round(precio_base * (1 + variacion), 2)
+            precio_std = round(precio_base * (1 + variacion), 2)
 
             # Tiempo de arribo con pequeña variación determinista
             tiempo_base = self.TIEMPOS_BASE.get(proveedor, 4)
             variacion_tiempo = rng.choice([-1, 0, 1])
-            tiempo_arribo = max(1, tiempo_base + variacion_tiempo)
+            tiempo_std = max(2, tiempo_base + variacion_tiempo)
+
+            # Opción Estándar
+            resultados.append({
+                "proveedor": proveedor,
+                "tipo_envio": "Estándar",
+                "precio": precio_std,
+                "tiempo_arribo_dias": tiempo_std,
+                "pieza_solicitada": f"Kit Rodamiento Industrial - {tipo_falla if tipo_falla != 'Sana' else 'Estándar'}"
+            })
+
+            # Opción Exprés (más cara, arribo más rápido de 1 a 2 días)
+            precio_exp = round(precio_std + 250.0, 2)
+            tiempo_exp = max(1, tiempo_std - 2)
+            if tiempo_exp == tiempo_std:
+                tiempo_exp = max(1, tiempo_std - 1)
 
             resultados.append({
                 "proveedor": proveedor,
-                "precio": precio,
-                "tiempo_arribo_dias": tiempo_arribo,
+                "tipo_envio": "Exprés",
+                "precio": precio_exp,
+                "tiempo_arribo_dias": tiempo_exp,
                 "pieza_solicitada": f"Kit Rodamiento Industrial - {tipo_falla if tipo_falla != 'Sana' else 'Estándar'}"
             })
 

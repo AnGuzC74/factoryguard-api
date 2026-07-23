@@ -2,6 +2,7 @@ import os
 import sys
 import tomllib
 from pathlib import Path
+from typing import Optional
 import numpy as np
 import polars as pl
 import streamlit as st
@@ -14,6 +15,8 @@ from core.dsp import (
     calcular_punto_inflexion_log,
     calcular_rul_hibrido
 )
+from database.db_manager import DatabaseManager
+from agent_orchestrator.graph import OrquestadorAgentePrescriptivo
 
 st.set_page_config(page_title="Industrial AI - Visor & Simulador", page_icon="🏭", layout="wide")
 
@@ -85,6 +88,10 @@ class DashboardPrognosisIndustrial:
         self.FREQ_BPFI = 296.8
         self.FREQ_BSF = 139.2
         self.FREQ_FTF = 14.8
+
+        self.db_path = self.config["infraestructura"].get("database", "datos/industrial_ai.db")
+        self.db = DatabaseManager(self.db_path)
+        self.orquestador = OrquestadorAgentePrescriptivo(self.db)
 
     @st.cache_data
     def cargar_telemetria(_self, mtime: float) -> pl.DataFrame:
@@ -183,6 +190,220 @@ class DashboardPrognosisIndustrial:
             self.renderizar_modo_nasa()
         else:
             self.renderizar_modo_simulador()
+
+    def renderizar_seccion_negociacion(self, asset_id: int, rul_hours: Optional[float], tipo_falla: str, severidad: str):
+        st.markdown("---")
+        st.subheader("🤖 Orquestación Prescriptiva Multi-Agente (Negociación & Juez)")
+
+        # 1. Asegurar que exista un activo registrado en la base de datos para este asset_id
+        asset = self.db.get_asset_by_id(asset_id)
+        if not asset:
+            # Registrar activo por defecto para que las llaves foráneas y la consulta funcionen
+            self.db.register_asset(
+                name="Rodamiento NASA - Principal",
+                description="Rodamiento de alta velocidad simulado / NASA",
+                rpm=2000.0,
+                umbral_alerta=self.UMBRAL_ALERTA,
+                umbral_critico=self.UMBRAL_CRITICO,
+                criticidad="ALTA"
+            )
+            asset = self.db.get_asset_by_id(asset_id)
+
+        criticidad = asset.get("criticidad", "ALTA") if asset else "ALTA"
+        st.write(f"**Activo:** {asset.get('name', 'Rodamiento NASA')} (ID: {asset_id}) | **Criticidad del Activo:** `{criticidad}`")
+
+        # Botón para disparar negociación
+        col_trigger_1, col_trigger_2 = st.columns([1, 3])
+        with col_trigger_1:
+            if st.button("⚡ Iniciar Negociación Multi-Agente", use_container_width=True):
+                # Calcular horas de RUL reales
+                rul_val = rul_hours if rul_hours is not None else 999.0
+                session_id = self.orquestador.disparar_grafo(
+                    asset_id=asset_id,
+                    rul_hours=rul_val,
+                    tipo_falla=tipo_falla,
+                    severidad=severidad
+                )
+                st.session_state["active_agent_session_id"] = session_id
+                st.toast("¡Negociación multi-agente iniciada con éxito!", icon="🤖")
+
+        with col_trigger_2:
+            # Mostrar lista de sesiones recientes para poder cargarlas
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT session_id, status, created_at FROM agent_sessions ORDER BY created_at DESC LIMIT 5")
+                rows = cursor.fetchall()
+            if rows:
+                sesiones_dict = {f"{r[2]} - {r[1]} ({r[0][:8]}...)": r[0] for r in rows}
+                opciones_sesiones = list(sesiones_dict.keys())
+
+                # Seleccionar sesión
+                selec_idx = 0
+                active_sid = st.session_state.get("active_agent_session_id")
+                if active_sid:
+                    for k, v in sesiones_dict.items():
+                        if v == active_sid:
+                            selec_idx = opciones_sesiones.index(k)
+                            break
+
+                selected_sess_label = st.selectbox("Cargar sesión de negociación reciente:", opciones_sesiones, index=selec_idx)
+                if selected_sess_label:
+                    st.session_state["active_agent_session_id"] = sesiones_dict[selected_sess_label]
+
+        session_id = st.session_state.get("active_agent_session_id")
+        if not session_id:
+            st.info("Haga clic en 'Iniciar Negociación Multi-Agente' para debatir y evaluar la mejor estrategia de reemplazo y logística.")
+            return
+
+        # Cargar detalles de la sesión
+        session = self.db.get_agent_session(session_id)
+        if not session:
+            st.warning("No se pudo cargar la sesión activa.")
+            return
+
+        state_data = session["state_data"]
+        debate = state_data.get("debate")
+        reporte_juez = state_data.get("reporte_juez")
+
+        if not debate or not reporte_juez:
+            st.warning("Esta sesión no contiene datos del debate multi-agente ni del Juez.")
+            return
+
+        # --- MOSTRAR DEBATE DE AGENTES ---
+        st.markdown("### 🗣️ El Debate: Conflicto de Intereses Colectivo")
+        st.write("Tres agentes autónomos especializados defienden sus prioridades antes del dictamen del Juez:")
+
+        col_ops, col_log, col_fin = st.columns(3)
+
+        with col_ops:
+            ops_data = debate.get("ops_agent", {})
+            st.markdown(
+                f"""
+                <div style="background-color:#1e3d59; color:#ffffff; padding:15px; border-radius:10px; border-left: 5px solid #17b978; height: 100%;">
+                    <h4 style="margin-top:0; color:#17b978;">🎯 Agente Operaciones</h4>
+                    <p style="font-size:0.9em; font-style:italic; color:#e0e0e0; margin-bottom:10px;"><b>Prioridad:</b> {ops_data.get('prioridad')}</p>
+                    <p style="font-size:0.95em; color:#ffffff; line-height:1.4;">{ops_data.get('recomendacion')}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col_log:
+            log_data = debate.get("log_agent", {})
+            st.markdown(
+                f"""
+                <div style="background-color:#2a2438; color:#ffffff; padding:15px; border-radius:10px; border-left: 5px solid #ab63fa; height: 100%;">
+                    <h4 style="margin-top:0; color:#ab63fa;">🚚 Agente Logística</h4>
+                    <p style="font-size:0.9em; font-style:italic; color:#e0e0e0; margin-bottom:10px;"><b>Prioridad:</b> {log_data.get('prioridad')}</p>
+                    <p style="font-size:0.95em; color:#ffffff; line-height:1.4;">{log_data.get('recomendacion')}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col_fin:
+            fin_data = debate.get("fin_agent", {})
+            st.markdown(
+                f"""
+                <div style="background-color:#352f44; color:#ffffff; padding:15px; border-radius:10px; border-left: 5px solid #ff7597; height: 100%;">
+                    <h4 style="margin-top:0; color:#ff7597;">💰 Agente Finanzas</h4>
+                    <p style="font-size:0.9em; font-style:italic; color:#e0e0e0; margin-bottom:10px;"><b>Prioridad:</b> {fin_data.get('prioridad')}</p>
+                    <p style="font-size:0.95em; color:#ffffff; line-height:1.4;">{fin_data.get('recomendacion')}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # --- MOSTRAR EVALUACIÓN DEL JUEZ ---
+        st.markdown("### ⚖️ Dictamen del Juez (LLM-as-a-Judge Determinista)")
+
+        eval_global = reporte_juez.get("evaluacion_global", {})
+        aprobado = eval_global.get("aprobado", False)
+        score_alineacion = eval_global.get("score_alineacion", 0.0)
+
+        # Color-coded header for approval/rejection
+        if aprobado:
+            st.success(f"✅ **PROPUESTA GLOBAL APROBADA** — El Juez certifica que el plan es seguro, técnicamente viable y económicamente óptimo (Alineación: {score_alineacion * 100:.1f}%)")
+        else:
+            st.error(f"❌ **PROPUESTA GLOBAL RECHAZADA POR EL JUEZ** — Se detectaron inconsistencias severas en las restricciones operativas o financieras (Alineación: {score_alineacion * 100:.1f}%)")
+
+            # Prominent display of rejection reason
+            st.markdown(
+                f"""
+                <div style="background-color:rgba(239, 85, 59, 0.15); padding:15px; border-radius:10px; border: 1px solid #EF553B; margin-bottom:15px;">
+                    <h5 style="margin-top:0; color:#EF553B;">⚠️ Motivo del Rechazo:</h5>
+                    <p style="margin-bottom:5px; font-weight:bold;">{reporte_juez.get('motivo_rechazo')}</p>
+                    <p style="margin-bottom:0; font-size:0.95em;"><b>Acción requerida obligatoria:</b> {reporte_juez.get('accion_requerida')}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # Columns for metrics and justification
+        col_j_izq, col_j_der = st.columns([1, 2])
+
+        with col_j_izq:
+            st.markdown("#### 📊 Desglose de Costos de Solución")
+            costos = reporte_juez.get("analisis_costos", {})
+
+            # Create a table for costs
+            cost_df = pl.DataFrame({
+                "Concepto Financiero": [
+                    "Costo de Envío",
+                    "Costo de Instalación",
+                    "Costo de Parada Estimado",
+                    "Costo de Repuesto + Instalación",
+                    "Costo Total Integrado (CTC)"
+                ],
+                "Monto (EUR)": [
+                    f"{costos.get('costo_envio', 0.0):,.2f} EUR",
+                    f"{costos.get('costo_instalacion', 0.0):,.2f} EUR",
+                    f"{costos.get('costo_parada_estimado', 0.0):,.2f} EUR",
+                    f"{costos.get('costo_total_solucion', 0.0):,.2f} EUR",
+                    f"{costos.get('costo_total_escenario_falla', 0.0):,.2f} EUR"
+                ]
+            })
+            st.table(cost_df.to_pandas())
+
+            st.markdown("#### ⚙️ Impacto Operativo")
+            imp_op = reporte_juez.get("impacto_operativo", {})
+            st.write(f"- **Criticidad del Activo:** `{imp_op.get('criticidad_equipo')}`")
+            st.write(f"- **Horas de Parada Evitadas:** `{imp_op.get('horas_parada_evitadas', 0.0):.1f} horas`")
+            st.write(f"- **Margen de Seguridad:** `{imp_op.get('margen_seguridad_dias', 0.0):.1f} días`")
+
+        with col_j_der:
+            st.markdown("#### 📝 Justificación Oficial de la Decisión")
+            st.info(reporte_juez.get("justificacion_decision"))
+
+        # --- ESTADO DE APROBACIÓN HUMANA ---
+        st.markdown("---")
+        st.markdown("### 👤 Control de Aprobación Humana (Última Palabra)")
+
+        status = session["status"]
+        if "Pausado" in status:
+            if not aprobado:
+                st.warning("⚠️ **Estado: Esperando decisión humana** — La propuesta fue rechazada por el Juez. El operador de planta debe decidir si forzar la aprobación o rechazar y renegociar.")
+            else:
+                st.success("📝 **Estado: Esperando aprobación humana final** — La propuesta es óptima según el Juez. Confirme para emitir la orden de trabajo final.")
+
+            col_btn_1, col_btn_2, _ = st.columns([1, 1, 2])
+            with col_btn_1:
+                if st.button("👍 Aprobar y Proceder con el Plan", use_container_width=True):
+                    self.orquestador.procesar_aprobacion(session_id, aprobado=True)
+                    st.toast("¡Plan aprobado por el operador de planta!", icon="✅")
+                    st.rerun()
+            with col_btn_2:
+                if st.button("👎 Rechazar y Cancelar Plan", use_container_width=True):
+                    self.orquestador.procesar_aprobacion(session_id, aprobado=False)
+                    st.toast("Plan rechazado por el operador de planta.", icon="❌")
+                    st.rerun()
+        else:
+            # Plan finalizado (Aprobado o Rechazado por el humano)
+            st.write(f"**Estatus de la Sesión:** `{status}`")
+            st.info(f"💬 **Mensaje de Cierre del Operador:** {state_data.get('mensaje_final')}")
+
 
     def renderizar_modo_nasa(self):
         st.title("📊 Visor de Datos de Pronóstico Industrial (NASA IMS)")
@@ -333,6 +554,26 @@ class DashboardPrognosisIndustrial:
 
         # --- REPORTE TÉCNICO ---
         self.mostrar_reporte_texto(seleccion, rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla, punto_micro)
+
+        # Determinar severidad de la alerta para la negociación
+        if max_rms_historico >= self.UMBRAL_CRITICO:
+            sev_neg = "CRÍTICO"
+        elif max_rms_historico >= self.UMBRAL_ALERTA:
+            if horas_rul is not None and horas_rul < 50:
+                sev_neg = "ALERTA AVANZADA"
+            elif horas_rul is not None and horas_rul < 200:
+                sev_neg = "ALERTA INCIPIENTE"
+            else:
+                sev_neg = "VIGILANCIA"
+        else:
+            sev_neg = "SALUDABLE"
+
+        self.renderizar_seccion_negociacion(
+            asset_id=1,
+            rul_hours=horas_rul,
+            tipo_falla=zona_falla,
+            severidad=sev_neg
+        )
 
     def renderizar_modo_simulador(self):
         st.title("🎮 Simulador de Fallas e Inyección de Defectos Físicos")
@@ -589,6 +830,26 @@ class DashboardPrognosisIndustrial:
 
         # --- REPORTE TÉCNICO SIMULADO ---
         self.mostrar_reporte_texto("Sintético_Simulado", rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla_sim, punto_micro_sim)
+
+        # Determinar severidad de la alerta para la negociación simulada
+        if max_rms_historico >= self.UMBRAL_CRITICO:
+            sev_neg_sim = "CRÍTICO"
+        elif max_rms_historico >= self.UMBRAL_ALERTA:
+            if horas_rul is not None and horas_rul < 50:
+                sev_neg_sim = "ALERTA AVANZADA"
+            elif horas_rul is not None and horas_rul < 200:
+                sev_neg_sim = "ALERTA INCIPIENTE"
+            else:
+                sev_neg_sim = "VIGILANCIA"
+        else:
+            sev_neg_sim = "SALUDABLE"
+
+        self.renderizar_seccion_negociacion(
+            asset_id=1,
+            rul_hours=horas_rul,
+            tipo_falla=zona_falla_sim,
+            severidad=sev_neg_sim
+        )
 
     def mostrar_reporte_texto(self, seleccion, rms_actual, max_rms_historico, freq_dom, motor_apagado, horas_rul, rul_legible, modelo_sel, zona_falla, punto_micro):
         st.subheader("📋 Reporte Técnico Estructurado")

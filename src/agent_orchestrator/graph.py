@@ -78,6 +78,8 @@ class AgentState(TypedDict):
     recomendacion: Optional[Dict[str, Any]]
     aprobado: Optional[str]  # "PENDIENTE", "APROBADO", "RECHAZADO"
     mensaje_final: Optional[str]
+    reporte_juez: Optional[Dict[str, Any]]
+    debate: Optional[Dict[str, Any]]
 
 
 # --- Nodos del Grafo ---
@@ -125,6 +127,39 @@ def buscar_repuestos(state: AgentState) -> Dict[str, Any]:
         repuestos = supplier.buscar_repuestos(state.get("tipo_falla", "DEFAULT"))
 
     return {"repuestos": repuestos}
+
+
+def negociacion_multiagente(state: AgentState) -> Dict[str, Any]:
+    """
+    Nodo de debate multi-agente donde Operaciones, Logística y Finanzas discuten
+    el plan propuesto y el Juez emite una evaluación determinista.
+    """
+    from src.agent_orchestrator.negotiation import ejecutar_debate_y_evaluacion
+    db = DatabaseManager()
+
+    # Obtener criticidad del activo de la base de datos
+    criticidad_db = None
+    asset_id = state.get("asset_id")
+    if asset_id:
+        asset_data = db.get_asset_by_id(asset_id)
+        if asset_data:
+            criticidad_db = asset_data.get("criticidad")
+
+    # Ejecutar debate y evaluación continua del Juez
+    reporte, debate_payload = ejecutar_debate_y_evaluacion(
+        asset_id=state.get("asset_id", 1),
+        rul_hours=state.get("rul_hours", 100.0),
+        tipo_falla=state.get("tipo_falla", "DEFAULT"),
+        severidad=state.get("severidad", "SALUDABLE"),
+        all_repuestos=state.get("repuestos", []),
+        recomendacion_balance=state.get("recomendacion", {}),
+        criticidad_db=criticidad_db
+    )
+
+    return {
+        "reporte_juez": reporte.model_dump(),
+        "debate": debate_payload
+    }
 
 
 def presentar_comparativa(state: AgentState) -> Dict[str, Any]:
@@ -208,6 +243,7 @@ def construir_grafo() -> StateGraph:
     workflow.add_node("generar_orden_prescriptiva", generar_orden_prescriptiva)
     workflow.add_node("buscar_repuestos", buscar_repuestos)
     workflow.add_node("presentar_comparativa", presentar_comparativa)
+    workflow.add_node("negociacion_multiagente", negociacion_multiagente)
     workflow.add_node("aprobacion_humana", aprobacion_human_node)
     workflow.add_node("finalizar_orden", finalizar_orden)
 
@@ -216,7 +252,8 @@ def construir_grafo() -> StateGraph:
     workflow.add_edge("diagnosticar", "generar_orden_prescriptiva")
     workflow.add_edge("generar_orden_prescriptiva", "buscar_repuestos")
     workflow.add_edge("buscar_repuestos", "presentar_comparativa")
-    workflow.add_edge("presentar_comparativa", "aprobacion_humana")
+    workflow.add_edge("presentar_comparativa", "negociacion_multiagente")
+    workflow.add_edge("negociacion_multiagente", "aprobacion_humana")
     workflow.add_edge("aprobacion_humana", "finalizar_orden")
     workflow.add_edge("finalizar_orden", END)
 
@@ -251,7 +288,9 @@ class OrquestadorAgentePrescriptivo:
             "tabla_comparativa": [],
             "recomendacion": None,
             "aprobado": "PENDIENTE",
-            "mensaje_final": None
+            "mensaje_final": None,
+            "reporte_juez": None,
+            "debate": None
         }
 
         # Ejecutar los primeros nodos del grafo secuencialmente
@@ -262,14 +301,20 @@ class OrquestadorAgentePrescriptivo:
         state = {**state, **generar_orden_prescriptiva(state)}
         state = {**state, **buscar_repuestos(state)}
         state = {**state, **presentar_comparativa(state)}
+        state = {**state, **negociacion_multiagente(state)}
         state = {**state, **aprobacion_human_node(state)}
+
+        # Determinar estatus según la evaluación del Juez
+        status = "Pausado (Esperando Aprobación)"
+        if state.get("reporte_juez") and not state["reporte_juez"]["evaluacion_global"]["aprobado"]:
+            status = "Pausado (Rechazado por Juez)"
 
         # Persistir estado intermedio en SQLite
         self.db.save_agent_session(
             session_id=session_id,
             state_name="aprobacion_humana",
             state_data=state,
-            status="Pausado (Esperando Aprobación)"
+            status=status
         )
 
         return session_id

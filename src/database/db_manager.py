@@ -30,9 +30,15 @@ class DatabaseManager:
                     umbral_alerta FLOAT DEFAULT 0.12,
                     umbral_critico FLOAT DEFAULT 0.25,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_demo BOOLEAN DEFAULT 0
+                    is_demo BOOLEAN DEFAULT 0,
+                    criticidad TEXT DEFAULT 'MEDIA'
                 )
             ''')
+            # Intentar alterar la tabla existente si ya existe pero no tiene la columna criticidad
+            try:
+                cursor.execute("ALTER TABLE assets ADD COLUMN criticidad TEXT DEFAULT 'MEDIA'")
+            except sqlite3.OperationalError:
+                pass # La columna ya existe
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS measurements (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,14 +82,15 @@ class DatabaseManager:
 
     def register_asset(self, name: str, description: str = "", location: str = "",
                        rpm: float = 2000.0, umbral_alerta: float = 0.12,
-                       umbral_critico: float = 0.25, is_demo: bool = False) -> int:
+                       umbral_critico: float = 0.25, is_demo: bool = False,
+                       criticidad: str = "MEDIA") -> int:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR IGNORE INTO assets
-                (name, description, location, rpm, umbral_alerta, umbral_critico, is_demo)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (name, description, location, rpm, umbral_alerta, umbral_critico, 1 if is_demo else 0))
+                (name, description, location, rpm, umbral_alerta, umbral_critico, is_demo, criticidad)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, description, location, rpm, umbral_alerta, umbral_critico, 1 if is_demo else 0, criticidad))
             conn.commit()
             return cursor.lastrowid
 
@@ -94,13 +101,13 @@ class DatabaseManager:
             if include_demo:
                 cursor.execute('''
                     SELECT id, name, description, location, rpm,
-                           umbral_alerta, umbral_critico, created_at, is_demo
+                           umbral_alerta, umbral_critico, created_at, is_demo, criticidad
                     FROM assets ORDER BY name
                 ''')
             else:
                 cursor.execute('''
                     SELECT id, name, description, location, rpm,
-                           umbral_alerta, umbral_critico, created_at, is_demo
+                           umbral_alerta, umbral_critico, created_at, is_demo, criticidad
                     FROM assets WHERE is_demo = 0 ORDER BY name
                 ''')
             return [dict(row) for row in cursor.fetchall()]
@@ -111,7 +118,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, name, description, location, rpm,
-                       umbral_alerta, umbral_critico, created_at, is_demo
+                       umbral_alerta, umbral_critico, created_at, is_demo, criticidad
                 FROM assets WHERE id = ?
             ''', (asset_id,))
             row = cursor.fetchone()
@@ -123,7 +130,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, name, description, location, rpm,
-                       umbral_alerta, umbral_critico, created_at, is_demo
+                       umbral_alerta, umbral_critico, created_at, is_demo, criticidad
                 FROM assets WHERE name = ?
             ''', (name,))
             row = cursor.fetchone()

@@ -35,3 +35,16 @@ embeddings_model = "sentence-transformers/all-MiniLM-L6-v2"
 
 [agent]
 feature_flag_enabled = true
+
+[agent_negotiation]
+# Margen de seguridad requerido para asegurar que el repuesto llegue antes de que falle el activo (en días)
+margen_seguridad_dias = 2.0
+
+# Costos referenciales de parada no planificada por hora según la criticidad del activo (en EUR)
+costo_hora_critica = 5000.0
+costo_hora_alta = 2500.0
+costo_hora_media = 1000.0
+costo_hora_baja = 200.0
+
+# Daño secundario estimado si el activo llega al fallo catastrófico (en EUR)
+danio_secundario_estimado = 15000.0
